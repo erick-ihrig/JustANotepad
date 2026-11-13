@@ -49,7 +49,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local db
 local frame, box, scrollFrame, editBox, thumb, grip
-local controls, controlButtons, searchBox, searchResult
+local controls, controlButtons, searchBar, searchBox, searchResult
 local tabBar, tabs, addTab, renameBox = nil, {}, nil, nil
 local category
 local minimapButton
@@ -195,16 +195,23 @@ local lastActive = 0
 local holdUntil = 0     -- keeps the window visible while a menu or popup about it is open
 local moving = false
 
+-- The mouse is on the window, or on the search icon or box that hang under its bottom-left corner.
+local function IsHovered()
+    return frame:IsMouseOver() or (searchBar:IsShown() and searchBar:IsMouseOver())
+        or (searchBox:IsShown() and searchBox:IsMouseOver())
+end
+
 local function IsActive()
     if moving or GetTime() < holdUntil then return true end
     if editBox:HasFocus() or searchBox:HasFocus() or renameBox:HasFocus() then return true end
-    return frame:IsMouseOver() or (searchBox:IsShown() and searchBox:IsMouseOver())
+    return IsHovered()
 end
 
 local function ApplyFade()
     box:SetAlpha(fade)
     tabBar:SetAlpha(fade)
     controls:SetAlpha(fade)
+    searchBar:SetAlpha(fade)
     searchBox:SetAlpha(fade)
     grip:SetAlpha(fade)
     thumb:SetAlpha(fade * 0.5)
@@ -296,7 +303,7 @@ local function CreateWindow()
     frame = CreateFrame("Frame", "JustANotepadFrame", UIParent)
     frame:SetFrameStrata("MEDIUM")
     frame:SetClampedToScreen(true)
-    frame:SetClampRectInsets(0, 0, 0, -HEADER) -- keeps room on screen for the search box under the window
+    frame:SetClampRectInsets(0, 0, 0, -HEADER) -- keeps room on screen for the search icon and box under the window
     frame:SetMovable(true)
     frame:SetResizable(true)
     if frame.SetResizeBounds then
@@ -423,13 +430,14 @@ local function Toggle()
 end
 
 ------------------------------------------------------------------------
--- Controls: small icons at the right end of the header row, in line with the tabs
+-- Controls: small icons at the right end of the header row, in line with the tabs.
+-- The search icon sits on its own under the bottom-left corner of the window.
 ------------------------------------------------------------------------
 
-local CONTROL_ORDER = { "Close", "Eye", "Location", "Undo", "Search" } -- right to left
+local CONTROL_ORDER = { "Close", "Eye", "Location", "Undo" } -- right to left
 
-local function CreateControl(texture, tooltip, onClick)
-    local button = CreateFrame("Button", nil, controls)
+local function CreateControl(texture, tooltip, onClick, parent)
+    local button = CreateFrame("Button", nil, parent or controls)
     button:SetSize(CONTROL_SIZE, CONTROL_SIZE)
     button.icon = button:CreateTexture(nil, "ARTWORK")
     button.icon:SetAllPoints()
@@ -484,6 +492,15 @@ function UpdateControls()
     undo.rest = (#undoStack > 0) and 0.55 or 0.2
     if not undo:IsMouseOver() then undo.icon:SetAlpha(undo.rest) end
 
+    -- The search box pops out to the right of the search icon (or sits in its place when the icon is hidden).
+    searchBar:SetShown(db.showSearch)
+    searchBox:ClearAllPoints()
+    if db.showSearch then
+        searchBox:SetPoint("LEFT", searchBar, "RIGHT", 1, 0)
+    else
+        searchBox:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -1)
+    end
+
     LayoutTabs() -- the tabs get the room the controls leave
 end
 
@@ -493,6 +510,12 @@ local function CreateControls()
     controls:SetHeight(TAB_HEIGHT)
     controls.back = controls:CreateTexture(nil, "BACKGROUND") -- the same shade as an unselected tab
     controls.back:SetAllPoints()
+
+    searchBar = CreateFrame("Frame", nil, frame)
+    searchBar:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -1)
+    searchBar:SetSize(TAB_HEIGHT, TAB_HEIGHT)
+    searchBar.back = searchBar:CreateTexture(nil, "BACKGROUND")
+    searchBar.back:SetAllPoints()
 
     controlButtons = {
         Close = CreateControl("Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Close (/note opens it again)", function()
@@ -512,14 +535,15 @@ local function CreateControls()
         end, Undo),
         Search = CreateControl("Interface\\Common\\UI-Searchbox-Icon", "Search all pages (Ctrl+F)", function()
             SetSearchShown(not searchBox:IsShown())
-        end),
+        end, searchBar),
     }
+    controlButtons.Search:SetPoint("CENTER")
     controlButtons.Eye.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     controlButtons.Location.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 end
 
 ------------------------------------------------------------------------
--- Search all pages: a small box under the bottom-left corner of the window, shown only while searching.
+-- Search all pages: the search icon sits under the bottom-left corner of the window; the box pops out to its right.
 -- Enter finds the next match; Escape closes it.
 ------------------------------------------------------------------------
 
@@ -557,7 +581,6 @@ end
 
 local function CreateSearch()
     searchBox = CreateFrame("EditBox", nil, frame)
-    searchBox:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -1)
     searchBox:SetSize(150, TAB_HEIGHT)
     searchBox:SetAutoFocus(false)
     searchBox:SetFontObject(GameFontHighlightSmall)
@@ -760,6 +783,7 @@ function LayoutTabs()
     addTab:SetShown(showAdd)
     StyleTab(addTab, false)
     controls.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
+    searchBar.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
 end
 
 local function CreateTabs()
@@ -923,8 +947,9 @@ local function RegisterOptions()
         "Each character gets their own pages. Off: one set of pages for all characters.",
         function() if frame then ShowPage(1) end end)
 
-    Header("Header Controls")
-    Checkbox("showSearch", "Search", "Shows the search control. Ctrl+F works either way.", UpdateControls)
+    Header("Controls")
+    Checkbox("showSearch", "Search", "Shows the search control under the bottom-left corner. Ctrl+F works either way.",
+        UpdateControls)
     Checkbox("showUndo", "Undo", "Shows the undo control. Ctrl+Z works either way.", UpdateControls)
     Checkbox("showLocation", "Insert Location", "Shows the location control. Ctrl+L works either way.", UpdateControls)
     Checkbox("showEye", "Text Fade Toggle (Eye)", "Shows the eye control, which switches Fade the Text Too.", UpdateControls)
@@ -981,7 +1006,7 @@ end
 
 -- A click anywhere outside the notepad stops typing, so your keys go back to the game.
 local function ClearFocusIfClickedOutside()
-    if frame:IsShown() and not (frame:IsMouseOver() or (searchBox:IsShown() and searchBox:IsMouseOver())) then
+    if frame:IsShown() and not IsHovered() then
         editBox:ClearFocus()
         searchBox:ClearFocus()
         renameBox:ClearFocus()
