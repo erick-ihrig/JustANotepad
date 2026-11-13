@@ -7,6 +7,8 @@ as you type and fades into the background when you're not using it.
 
 - **Floats over your UI.** When the notepad isn't hovered or focused, the box, tabs and controls fade away and
   only your text is left. The eye control lets the text fade as well.
+- **Lets you move.** Hold a movement key while typing and the notepad lets go: the held letters are taken back
+  (along with anything they replaced) and your keys go to the game again.
 - **Stays open.** Escape only stops typing. The notepad closes only from its close control, `/note`, the keybind
   or a launcher, and it reopens at login if it was open when you logged out.
 - **Pages.** Named tabs in a thin row above the text. A page is either for all your characters or for one

@@ -29,6 +29,7 @@ local DEFAULTS = {
     fontSize = 14,
     backgroundAlpha = 0.6,
     lock = false,
+    moveKeysExit = true,    -- holding a movement key while typing leaves the notepad and takes the letters back
     reopenAtLogin = true,
     minimapButton = false,
     minimapAngle = 225,
@@ -43,6 +44,7 @@ local MAX_TITLE = 24
 local MAX_UNDO = 30
 local TYPING_PAUSE = 2      -- seconds without typing before a new undo step starts
 local FADE_TIME = 0.2       -- seconds to fade in or out
+local HOLD_TIME = 0.5        -- seconds a movement key is held before it counts as trying to move
 local FADE_DELAY = 0.6      -- seconds after the mouse leaves before fading out
 local PAD = 8               -- the margin around the text; dragging it moves the window
 local CONTROL_SIZE = 14
@@ -297,10 +299,11 @@ local function ApplyFade()
     end
 end
 
-local CheckCursor -- defined with the page content
+local CheckCursor, CheckHeldKey -- defined with the page content
 
 local function OnUpdate(_, elapsed)
     CheckCursor()
+    CheckHeldKey()
     local now = GetTime()
     if IsActive() then lastActive = now end
     local target = (now - lastActive < FADE_DELAY) and 1 or 0
@@ -703,6 +706,53 @@ local function StepFocus(widget, key)
 end
 
 -- Scripts every block's edit box shares. `widget` is the text block itself, or the to-do row around the edit box.
+-- Holding a movement key while typing means you're trying to move, not write "wwwwww". The page is noted as it
+-- was when the key went down; if the key is still down after HOLD_TIME (or has already repeated), the page is
+-- put back (the held letters go, and any selected text they replaced comes back) and typing stops, so the keys
+-- reach the game again.
+local MOVE_COMMANDS = { "MOVEFORWARD", "MOVEBACKWARD", "STRAFELEFT", "STRAFERIGHT", "TURNLEFT", "TURNRIGHT" }
+local MOVE_DEFAULTS = { W = true, A = true, S = true, D = true, Q = true, E = true }
+local heldKey
+
+-- Letter keys bound to movement (arrow keys are left alone: in a text box they move the cursor).
+local function IsMovementKey(key)
+    if #key ~= 1 or not key:find("%a") then return false end
+    if not GetBindingKey then return MOVE_DEFAULTS[key] or false end
+    for _, command in ipairs(MOVE_COMMANDS) do
+        local first, second = GetBindingKey(command)
+        if first == key or second == key then return true end
+    end
+    return false
+end
+
+local function WatchMovementKey(widget, key)
+    if not db.moveKeysExit or not IsKeyDown then return end
+    if heldKey and heldKey.key == key then return end -- the same press, repeating
+    heldKey = nil
+    if IsAltKeyDown and IsAltKeyDown() then return end
+    if not IsMovementKey(key) then return end
+    local page = CurrentPage()
+    heldKey = { key = key, at = GetTime(), widget = widget, page = page, blocks = CopyBlocks(page.blocks),
+        undo = #undoStack, count = 0 }
+end
+
+function CheckHeldKey()
+    local held = heldKey
+    if not held then return end
+    if not IsKeyDown(held.key) or focused ~= held.widget then
+        heldKey = nil -- released, or typing moved elsewhere: it was ordinary typing
+        return
+    end
+    if GetTime() - held.at < HOLD_TIME and held.count < 3 then return end
+    heldKey = nil
+    if held.page ~= CurrentPage() then return end
+    held.page.blocks = held.blocks
+    for _ = held.undo + 1, #undoStack do table.remove(undoStack) end -- the held letters aren't an undo step
+    typingStep = nil
+    RenderPage() -- shows the page as it was, and stops typing
+    UpdateControls()
+end
+
 local enterAt = 0 -- when Enter was last handled in a to-do, so one key press isn't handled twice
 
 local function SetUpEdit(edit, widget)
@@ -751,8 +801,14 @@ local function SetUpEdit(edit, widget)
         if focused == widget then focused = nil end
         self:HighlightText(0, 0) -- clicking away (or Escape) also drops any selection
     end)
+    edit:SetScript("OnChar", function(_, char)
+        if heldKey and char:upper() == heldKey.key then heldKey.count = heldKey.count + 1 end
+    end)
     edit:SetScript("OnKeyDown", function(_, key)
-        if not IsControlKeyDown() then return end
+        if not IsControlKeyDown() then
+            WatchMovementKey(widget, key)
+            return
+        end
         if key == "F" then
             SetSearchShown(true)
         elseif key == "Z" then
@@ -1520,6 +1576,9 @@ local function RegisterOptions()
 
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized.")
+    Checkbox("moveKeysExit", "Movement Keys Leave the Notepad",
+        "Holding a movement key (such as W, A, S or D) while typing stops typing so you can move, and takes back the "
+        .. "letters it typed. Tapping the keys still types as normal.")
     Checkbox("reopenAtLogin", "Reopen at Login", "If the notepad was open when you logged out, it opens again at login.")
     Checkbox("minimapButton", "Minimap Button", "Left-click opens the notepad, right-click opens these settings.",
         UpdateMinimapButton)
