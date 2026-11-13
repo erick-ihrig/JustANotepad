@@ -747,8 +747,9 @@ local function SetUpEdit(edit, widget)
     edit:SetScript("OnEditFocusGained", function()
         focused = widget
     end)
-    edit:SetScript("OnEditFocusLost", function()
+    edit:SetScript("OnEditFocusLost", function(self)
         if focused == widget then focused = nil end
+        self:HighlightText(0, 0) -- clicking away (or Escape) also drops any selection
     end)
     edit:SetScript("OnKeyDown", function(_, key)
         if not IsControlKeyDown() then return end
@@ -810,12 +811,6 @@ local function CreateTodoRow()
     delete:SetScript("OnClick", function()
         if row.block then DeleteTodo(row.block) end
     end)
-    delete:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-        GameTooltip:SetText("Delete this to-do", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    delete:SetScript("OnLeave", function() GameTooltip:Hide() end)
     row:SetScript("OnUpdate", function(self)
         delete:SetAlpha(self:IsMouseOver() and 1 or 0)
     end)
