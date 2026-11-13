@@ -1,5 +1,6 @@
 -- Just a Notepad
--- A text box that floats over the UI. Named page tabs, saves as you type. The box, tabs and controls fade away
+-- A text box that floats over the UI. A thin header row above it holds the page tabs (left) and small controls
+-- (right). Saves as you type. The box, tabs and controls fade away
 -- when the notepad isn't hovered or focused, leaving only the text (or nothing, with the eye toggle).
 --
 -- Data (JustANotepadDB, account-wide):
@@ -7,7 +8,7 @@
 --   pages                 shared pages: { title, text }
 --   characterPages[key]   per-character pages, when that option is on
 --
--- Commands: /note (toggle), /note settings, /note reset, /note tabs bottom/left/right, /note size N, /note bg N
+-- Commands: /note (toggle), /note settings, /note reset, /note size N, /note bg N
 -- Keybind: Key Bindings > AddOns > Just a Notepad.
 -- Sections, in order: data and pages, undo, window and fading, controls, search, tabs, launchers, settings,
 -- commands and events.
@@ -16,7 +17,6 @@ local ADDON_NAME = ...
 
 local DEFAULTS = {
     perCharacter = false,
-    tabSide = "bottom",     -- "bottom", "left" or "right"
     showSearch = true,      -- which corner controls appear
     showUndo = true,
     showLocation = true,
@@ -44,7 +44,7 @@ local FADE_DELAY = 0.6      -- seconds after the mouse leaves before fading out
 local PAD = 8               -- the margin around the text; dragging it moves the window
 local CONTROL_SIZE = 14
 local TAB_HEIGHT = 18
-local SIDE_TAB_WIDTH = 84
+local HEADER = TAB_HEIGHT + 1   -- the row of tabs and controls above the text box
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local db
@@ -71,6 +71,7 @@ local function LoadData()
     for key, value in pairs(DEFAULTS) do
         if db[key] == nil then db[key] = value end
     end
+    db.tabSide = nil -- the first build could put the tabs on the bottom or a side
 end
 
 -- "Name-Realm". Forever characters also have a surname (UnitName's second value), which is part of the key.
@@ -197,7 +198,7 @@ local moving = false
 local function IsActive()
     if moving or GetTime() < holdUntil then return true end
     if editBox:HasFocus() or searchBox:HasFocus() or renameBox:HasFocus() then return true end
-    return frame:IsMouseOver() or tabBar:IsMouseOver()
+    return frame:IsMouseOver()
 end
 
 local function ApplyFade()
@@ -246,7 +247,7 @@ local function PlaceWindow()
     else
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
     end
-    frame:SetSize(db.width or 320, db.height or 220)
+    frame:SetSize(db.width or 320, db.height or 240)
 end
 
 local function ResetWindow()
@@ -297,28 +298,29 @@ local function CreateWindow()
     frame:SetMovable(true)
     frame:SetResizable(true)
     if frame.SetResizeBounds then
-        frame:SetResizeBounds(160, 90, 1000, 800)
+        frame:SetResizeBounds(180, 110, 1000, 800)
     elseif frame.SetMinResize then
-        frame:SetMinResize(160, 90)
+        frame:SetMinResize(180, 110)
     end
     frame:EnableMouse(true)
     frame:SetToplevel(true)
     frame:Hide()
     -- Deliberately not in UISpecialFrames: Escape and the game's "close all windows" never close the notepad.
 
-    -- The box: background and thin border. It fades; the text (a sibling) doesn't have to.
+    -- The box: background and thin border, below the header row. It fades; the text (a sibling) doesn't have to.
     box = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    box:SetAllPoints()
+    box:SetPoint("TOPLEFT", 0, -HEADER)
+    box:SetPoint("BOTTOMRIGHT", 0, 0)
     box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
 
-    -- The margin around the text moves the window.
+    -- The margin around the text and the empty part of the header move the window.
     frame:SetScript("OnMouseDown", function(_, button)
         if button == "LeftButton" then StartMove() end
     end)
     frame:SetScript("OnMouseUp", StopMove)
 
     scrollFrame = CreateFrame("ScrollFrame", nil, frame)
-    scrollFrame:SetPoint("TOPLEFT", PAD, -PAD)
+    scrollFrame:SetPoint("TOPLEFT", PAD, -(HEADER + PAD))
     scrollFrame:SetPoint("BOTTOMRIGHT", -PAD, PAD)
     scrollFrame:EnableMouse(true)
     scrollFrame:EnableMouseWheel(true)
@@ -419,7 +421,7 @@ local function Toggle()
 end
 
 ------------------------------------------------------------------------
--- Controls: small icons in the top-right corner of the text box
+-- Controls: small icons at the right end of the header row, in line with the tabs
 ------------------------------------------------------------------------
 
 local CONTROL_ORDER = { "Close", "Eye", "Location", "Undo", "Search" } -- right to left
@@ -467,7 +469,7 @@ function UpdateControls()
             count = count + 1
         end
     end
-    controls:SetWidth(math.max(1, count * (CONTROL_SIZE + 4)))
+    controls:SetWidth(math.max(1, count * (CONTROL_SIZE + 4) + 2))
     controls.back:SetShown(count > 0)
 
     -- The eye is bright while the text stays visible, dim while it fades with the rest.
@@ -481,17 +483,16 @@ function UpdateControls()
     if not undo:IsMouseOver() then undo.icon:SetAlpha(undo.rest) end
 
     searchBox:ClearAllPoints()
-    searchBox:SetPoint("RIGHT", controls, count > 0 and "LEFT" or "RIGHT", -4, 0)
+    searchBox:SetPoint("RIGHT", controls, count > 0 and "LEFT" or "RIGHT", -1, 0)
+    LayoutTabs() -- the tabs get the room the controls leave
 end
 
 local function CreateControls()
     controls = CreateFrame("Frame", nil, frame)
-    controls:SetPoint("TOPRIGHT", -3, -3)
-    controls:SetHeight(CONTROL_SIZE + 4)
-    controls:SetFrameLevel(frame:GetFrameLevel() + 20)
-    controls.back = controls:CreateTexture(nil, "BACKGROUND") -- so text under the icons doesn't clash with them
+    controls:SetPoint("TOPRIGHT", 0, 0)
+    controls:SetHeight(TAB_HEIGHT)
+    controls.back = controls:CreateTexture(nil, "BACKGROUND") -- the same shade as an unselected tab
     controls.back:SetAllPoints()
-    controls.back:SetColorTexture(0, 0, 0, 0.5)
 
     controlButtons = {
         Close = CreateControl("Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Close (/note opens it again)", function()
@@ -518,7 +519,7 @@ local function CreateControls()
 end
 
 ------------------------------------------------------------------------
--- Search all pages: a small box left of the controls. Enter finds the next match; Escape closes it.
+-- Search all pages: a small box in the header, left of the controls. Enter finds the next match; Escape closes it.
 ------------------------------------------------------------------------
 
 function FindNext()
@@ -551,11 +552,12 @@ function SetSearchShown(shown)
     else
         searchBox:ClearFocus()
     end
+    LayoutTabs() -- the tabs make room for the search box
 end
 
 local function CreateSearch()
     searchBox = CreateFrame("EditBox", nil, controls)
-    searchBox:SetSize(110, CONTROL_SIZE + 4)
+    searchBox:SetSize(110, TAB_HEIGHT)
     searchBox:SetAutoFocus(false)
     searchBox:SetFontObject(GameFontHighlightSmall)
     searchBox:SetTextInsets(4, 30, 0, 0)
@@ -572,7 +574,7 @@ local function CreateSearch()
 end
 
 ------------------------------------------------------------------------
--- Page tabs: along the bottom, or down the left or right side. Right-click for the menu.
+-- Page tabs: in the header row above the text box, left of the controls. Right-click for the menu.
 ------------------------------------------------------------------------
 
 local function AddPage()
@@ -654,13 +656,12 @@ local function ShowTabMenu(tab)
     local index = tab:GetID()
     local pages = GetPages()
     local page = pages[index]
-    local sideways = db.tabSide ~= "bottom"
     local menu = MenuUtil.CreateContextMenu(tab, function(_, root)
         root:CreateTitle(page.title)
         root:CreateButton("Rename", function() StartRename(page) end)
-        local back = root:CreateButton(sideways and "Move Up" or "Move Left", function() MovePage(page, -1) end)
+        local back = root:CreateButton("Move Left", function() MovePage(page, -1) end)
         back:SetEnabled(index > 1)
-        local forward = root:CreateButton(sideways and "Move Down" or "Move Right", function() MovePage(page, 1) end)
+        local forward = root:CreateButton("Move Right", function() MovePage(page, 1) end)
         forward:SetEnabled(index < #pages)
         local delete = root:CreateButton("Delete", function() AskToDelete(page) end)
         delete:SetEnabled(#pages > 1)
@@ -683,6 +684,7 @@ local function CreateTab()
     tab.text:SetPoint("LEFT", 6, 0)
     tab.text:SetPoint("RIGHT", -6, 0)
     tab.text:SetWordWrap(false)
+    tab.text:SetJustifyH("CENTER")
     tab:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     tab:RegisterForDrag("LeftButton") -- dragging a tab moves the window
     tab:SetScript("OnDragStart", StartMove)
@@ -722,56 +724,34 @@ function LayoutTabs()
     local pages = GetPages()
     local count = #pages
     local current = CurrentIndex()
-    local side = db.tabSide
     local addWidth = 20
     local showAdd = count < MAX_PAGES
 
-    tabBar:ClearAllPoints()
-    if side == "left" then
-        tabBar:SetPoint("TOPRIGHT", frame, "TOPLEFT", -1, 0)
-    elseif side == "right" then
-        tabBar:SetPoint("TOPLEFT", frame, "TOPRIGHT", 1, 0)
-    else
-        tabBar:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -1)
-    end
+    -- Room for the tabs: the header's width minus the controls (and the search box while it's open).
+    local reserved = controls:GetWidth() + 6
+    if searchBox:IsShown() then reserved = reserved + searchBox:GetWidth() + 2 end
+    local available = (frame:GetWidth() or 320) - reserved - (showAdd and addWidth + 1 or 0) - count
 
-    local slots = count + (showAdd and 1 or 0)
-    if side == "bottom" then
-        -- Each tab is as wide as its name; when they don't fit, they all shrink evenly.
-        local available = (frame:GetWidth() or 320) - (showAdd and addWidth + 1 or 0) - count
-        local widths, total = {}, 0
-        for index, page in ipairs(pages) do
-            local tab = GetTab(index)
-            tab.text:SetText(page.title)
-            widths[index] = math.min(120, math.ceil(tab.text:GetStringWidth() or 40) + 14)
-            total = total + widths[index]
-        end
-        local scale = (total > available and total > 0) and available / total or 1
-        local x = 0
-        for index = 1, count do
-            local tab = tabs[index]
-            tab:ClearAllPoints()
-            tab:SetPoint("TOPLEFT", x, 0)
-            tab:SetWidth(math.max(12, math.floor(widths[index] * scale)))
-            tab.text:SetJustifyH("CENTER")
-            x = x + tab:GetWidth() + 1
-        end
-        addTab:ClearAllPoints()
-        addTab:SetPoint("TOPLEFT", x, 0)
-        tabBar:SetSize(math.max(1, x + (showAdd and addWidth or 0)), TAB_HEIGHT)
-    else
-        for index, page in ipairs(pages) do
-            local tab = GetTab(index)
-            tab.text:SetText(page.title)
-            tab:ClearAllPoints()
-            tab:SetPoint("TOPLEFT", 0, -(index - 1) * (TAB_HEIGHT + 1))
-            tab:SetWidth(SIDE_TAB_WIDTH)
-            tab.text:SetJustifyH(side == "left" and "RIGHT" or "LEFT")
-        end
-        addTab:ClearAllPoints()
-        addTab:SetPoint(side == "left" and "TOPRIGHT" or "TOPLEFT", 0, -count * (TAB_HEIGHT + 1))
-        tabBar:SetSize(SIDE_TAB_WIDTH, math.max(1, slots * (TAB_HEIGHT + 1)))
+    -- Each tab is as wide as its name; when they don't fit, they all shrink evenly.
+    local widths, total = {}, 0
+    for index, page in ipairs(pages) do
+        local tab = GetTab(index)
+        tab.text:SetText(page.title)
+        widths[index] = math.min(120, math.ceil(tab.text:GetStringWidth() or 40) + 14)
+        total = total + widths[index]
     end
+    local scale = (total > available and total > 0) and math.max(0, available) / total or 1
+    local x = 0
+    for index = 1, count do
+        local tab = tabs[index]
+        tab:ClearAllPoints()
+        tab:SetPoint("TOPLEFT", x, 0)
+        tab:SetWidth(math.max(12, math.floor(widths[index] * scale)))
+        x = x + tab:GetWidth() + 1
+    end
+    addTab:ClearAllPoints()
+    addTab:SetPoint("TOPLEFT", x, 0)
+    tabBar:SetSize(math.max(1, x + (showAdd and addWidth or 0)), TAB_HEIGHT)
 
     for index, tab in ipairs(tabs) do
         tab:SetShown(index <= count)
@@ -779,16 +759,17 @@ function LayoutTabs()
     end
     addTab:SetShown(showAdd)
     StyleTab(addTab, false)
+    controls.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
 end
 
 local function CreateTabs()
     tabBar = CreateFrame("Frame", nil, frame)
+    tabBar:SetPoint("TOPLEFT", 0, 0)
     tabBar:SetSize(1, TAB_HEIGHT)
 
     addTab = CreateTab()
     addTab:SetWidth(20)
     addTab.text:SetText("+")
-    addTab.text:SetJustifyH("CENTER")
     addTab:SetScript("OnClick", AddPage)
     addTab:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
@@ -941,19 +922,8 @@ local function RegisterOptions()
     Checkbox("perCharacter", "Separate Pages per Character",
         "Each character gets their own pages. Off: one set of pages for all characters.",
         function() if frame then ShowPage(1) end end)
-    Try(function()
-        local function Choices()
-            local container = Settings.CreateControlTextContainer()
-            container:Add("bottom", "Bottom")
-            container:Add("left", "Left")
-            container:Add("right", "Right")
-            return container:GetData()
-        end
-        Settings.CreateDropdown(category, Register("tabSide", "Page Tabs", LayoutTabs), Choices,
-            "Where the page tabs sit: along the bottom, or down the left or right side.")
-    end)
 
-    Header("Corner Controls")
+    Header("Header Controls")
     Checkbox("showSearch", "Search", "Shows the search control. Ctrl+F works either way.", UpdateControls)
     Checkbox("showUndo", "Undo", "Shows the undo control. Ctrl+Z works either way.", UpdateControls)
     Checkbox("showLocation", "Insert Location", "Shows the location control. Ctrl+L works either way.", UpdateControls)
@@ -997,9 +967,6 @@ SlashCmdList.JUSTANOTEPAD = function(message)
         OpenSettings()
     elseif command == "reset" then
         ResetWindow()
-    elseif command == "tabs" and (value == "bottom" or value == "left" or value == "right") then
-        db.tabSide = value
-        LayoutTabs()
     elseif command == "size" and tonumber(value) then
         db.fontSize = math.max(8, math.min(28, math.floor(tonumber(value))))
         ApplyLook()
@@ -1008,13 +975,13 @@ SlashCmdList.JUSTANOTEPAD = function(message)
         ApplyLook()
     else
         Print("/note opens or closes it. Also: /note settings, /note reset (position and size), "
-            .. "/note tabs bottom/left/right, /note size 8-28, /note bg 0-100")
+            .. "/note size 8-28, /note bg 0-100")
     end
 end
 
 -- A click anywhere outside the notepad stops typing, so your keys go back to the game.
 local function ClearFocusIfClickedOutside()
-    if frame:IsShown() and not (frame:IsMouseOver() or tabBar:IsMouseOver()) then
+    if frame:IsShown() and not frame:IsMouseOver() then
         editBox:ClearFocus()
         searchBox:ClearFocus()
         renameBox:ClearFocus()

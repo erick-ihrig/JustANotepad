@@ -9,11 +9,11 @@ as you type and fades into the background when you're not using it.
   only your text is left. The eye control lets the text fade as well.
 - **Stays open.** Escape only stops typing. The notepad closes only from its close control, `/note`, the keybind
   or a launcher, and it reopens at login if it was open when you logged out.
-- **Pages.** Named tabs along the bottom or down either side. Right-click a tab to rename, move or delete it.
+- **Pages.** Named tabs in a thin row above the text. Right-click a tab to rename, move or delete it.
   Pages can be shared by all characters or kept per character.
-- **Small corner controls.** Search all pages (Ctrl+F), undo (Ctrl+Z), insert your location (Ctrl+L), the eye and
+- **Small controls in line with the tabs.** Search all pages (Ctrl+F), undo (Ctrl+Z), insert your location (Ctrl+L), the eye and
   close. Each can be hidden in the settings.
-- **Moving and resizing.** Drag the margin around the text or a tab to move it; drag the bottom-right corner to
+- **Moving and resizing.** Drag the margin around the text, a tab or the empty part of the tab row to move it; drag the bottom-right corner to
   resize it. Lock Window in the settings stops both.
 
 ## Commands
@@ -23,7 +23,6 @@ as you type and fades into the background when you're not using it.
 | `/note` | Open or close the notepad |
 | `/note settings` | Open the settings page |
 | `/note reset` | Put the window back at its default position and size |
-| `/note tabs bottom`, `left` or `right` | Move the page tabs |
 | `/note size 8-28` | Text size |
 | `/note bg 0-100` | Background opacity |
 
