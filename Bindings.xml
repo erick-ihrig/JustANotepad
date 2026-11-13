@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="JUSTANOTEPAD_TOGGLE" description="Toggle Notepad" header="JUSTANOTEPAD">
+        JustANotepad_Toggle()
+    </Binding>
+</Bindings>

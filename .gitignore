@@ -1,0 +1,7 @@
+*.zip
+.release/
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+*.bak

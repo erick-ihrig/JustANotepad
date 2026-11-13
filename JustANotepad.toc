@@ -1,0 +1,12 @@
+## Interface: 16001
+## Title: Just a Notepad
+## Notes: A minimal notepad: a movable, resizable text box with named page tabs that saves as you type and fades away when you're not using it. Type /note to open or close it.
+## Author: Erick Ihrig
+## Version: 0.1.0
+## X-Website: https://github.com/erick-ihrig/JustANotepad
+## X-License: MIT
+## IconTexture: Interface\Icons\INV_Misc_Note_01
+## SavedVariables: JustANotepadDB
+## AddonCompartmentFunc: JustANotepad_OnAddonCompartmentClick
+
+JustANotepad.lua
