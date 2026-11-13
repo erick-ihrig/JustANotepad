@@ -370,7 +370,7 @@ local function UpdateThumb()
     thumb:Show()
 end
 
-local SetSearchShown, FindNext, AddTodo, ResizeBlocks -- defined further down
+local SetSearchShown, FindNext, AddTodo, ResizeBlocks, OpenMenu -- defined further down
 
 local function CreateWindow()
     frame = CreateFrame("Frame", "JustANotepadFrame", UIParent)
@@ -754,6 +754,60 @@ function CheckHeldKey()
     UpdateControls()
 end
 
+-- What's highlighted in an edit box, as (start, length) in its text, or nil. The game has no call for this, so
+-- the selection is found by letting a marker replace it for a moment and comparing; the text, cursor and
+-- highlight are put back straight away.
+local MARKER = "<<@jan@>>"
+local probing = false
+
+local function GetSelection(edit)
+    local before = edit:GetText()
+    local cursor = edit:GetCursorPosition()
+    probing = true
+    edit:Insert(MARKER)
+    local after = edit:GetText()
+    edit:SetText(before)
+    edit:SetCursorPosition(cursor)
+    probing = false
+    local length = #before - (#after - #MARKER)
+    if length <= 0 then return nil end
+    local from = 1
+    while true do
+        local at = after:find(MARKER, from, true)
+        if not at then return nil end
+        local start = at - 1
+        if before:sub(1, start) == after:sub(1, start) and before:sub(start + length + 1) == after:sub(at + #MARKER) then
+            edit:HighlightText(start, start + length)
+            return start, length
+        end
+        from = at + 1
+    end
+end
+
+-- Turns the highlighted part of a text block into to-dos: one for each line that was ended with Enter
+-- (lines the box only wrapped stay together). The text before and after stays where it was.
+local function ConvertSelection(widget, start, length)
+    local page = CurrentPage()
+    local index = BlockIndex(page, widget.block)
+    if not index or widget.block.todo then return end
+    local text = widget.block.text
+    local above, picked, below = text:sub(1, start), text:sub(start + 1, start + length), text:sub(start + length + 1)
+    local todos = {}
+    for line in (picked .. "\n"):gmatch("(.-)\n") do
+        line = strtrim(line)
+        if line ~= "" then todos[#todos + 1] = { todo = true, text = line } end
+    end
+    if #todos == 0 then return end
+    RememberPage(page)
+    if above:sub(-1) == "\n" then above = above:sub(1, -2) end
+    if below:sub(1, 1) == "\n" then below = below:sub(2) end
+    widget.block.text = above
+    for offset, todo in ipairs(todos) do table.insert(page.blocks, index + offset, todo) end
+    table.insert(page.blocks, index + #todos + 1, { text = below })
+    Normalize(page)
+    RenderPage()
+end
+
 local enterAt = 0 -- when Enter was last handled in a to-do, so one key press isn't handled twice
 
 local function SetUpEdit(edit, widget)
@@ -765,7 +819,7 @@ local function SetUpEdit(edit, widget)
     edit:SetShadowOffset(1, -1)
     edit:SetScript("OnTextChanged", function(self, userInput)
         local block = widget.block
-        if not block then return end
+        if not block or probing then return end
         if userInput then
             local page = CurrentPage()
             local text = self:GetText()
@@ -828,6 +882,15 @@ local function CreateTextBlock()
     edit:SetMaxLetters(MAX_LETTERS)
     SetUpEdit(edit, edit)
     edit:SetScript("OnSizeChanged", Relayout)
+    -- Right-click with text highlighted: a menu to turn it into to-dos.
+    edit:SetScript("OnMouseUp", function(self, button)
+        if button ~= "RightButton" or not self.block then return end
+        local start, length = GetSelection(self)
+        if not start then return end
+        OpenMenu(self, function(_, root)
+            root:CreateButton("Convert into to-do", function() ConvertSelection(self, start, length) end)
+        end)
+    end)
     return edit
 end
 
@@ -1275,7 +1338,7 @@ local function StartRename(page)
 end
 
 -- Opens a menu on `owner` and keeps the notepad visible while it's open.
-local function OpenMenu(owner, build)
+function OpenMenu(owner, build)
     if not (MenuUtil and MenuUtil.CreateContextMenu) then return false end
     local menu = MenuUtil.CreateContextMenu(owner, build)
     if menu and menu.SetClosedCallback then

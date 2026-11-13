@@ -16,7 +16,8 @@ as you type and fades into the background when you're not using it.
   character only (those tabs are tinted in the class color). Left-click + for an all-characters page, right-click
   + for a character page. Right-click a tab to rename, move, convert or delete it.
 - **To-do lines.** Add a to-do anywhere in a page (the checkmark control, or Ctrl+T). Tick its box to strike it
-  through; hover it and click the red circle to delete it. Long to-dos wrap, indented under their first line. Enter adds another to-do; Enter on an empty one goes
+  through; hover it and click the red circle to delete it. Long to-dos wrap, indented under their first line.
+  Highlight some text and right-click it to convert it into to-dos, one per line. Enter adds another to-do; Enter on an empty one goes
   back to ordinary text.
 - **Small controls.** In line with the tabs: undo (Ctrl+Z), add a to-do (Ctrl+T), the eye and close. Under the
   bottom-left corner: search all pages (Ctrl+F), with a box that pops out beside the icon. Each control can be
