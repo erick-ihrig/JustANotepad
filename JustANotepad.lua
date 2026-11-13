@@ -708,8 +708,9 @@ end
 -- Scripts every block's edit box shares. `widget` is the text block itself, or the to-do row around the edit box.
 -- Holding a movement key while typing means you're trying to move, not write "wwwwww". The page is noted as it
 -- was when the key went down; if the key is still down after HOLD_TIME (or has already repeated), the page is
--- put back (the held letters go, and any selected text they replaced comes back) and typing stops, so the keys
--- reach the game again.
+-- put back (the held letters go, and any selected text they replaced comes back) and typing stops. The key
+-- has to be released and pressed again to move: the game ignores a key that was already down, and addons
+-- can't start movement.
 local MOVE_COMMANDS = { "MOVEFORWARD", "MOVEBACKWARD", "STRAFELEFT", "STRAFERIGHT", "TURNLEFT", "TURNRIGHT" }
 local MOVE_DEFAULTS = { W = true, A = true, S = true, D = true, Q = true, E = true }
 local heldKey
@@ -1577,8 +1578,8 @@ local function RegisterOptions()
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized.")
     Checkbox("moveKeysExit", "Movement Keys Leave the Notepad",
-        "Holding a movement key (such as W, A, S or D) while typing stops typing so you can move, and takes back the "
-        .. "letters it typed. Tapping the keys still types as normal.")
+        "Holding a movement key (such as W, A, S or D) while typing stops typing and takes back the letters it typed. "
+        .. "Release the key and press it again to move. Tapping the keys still types as normal.")
     Checkbox("reopenAtLogin", "Reopen at Login", "If the notepad was open when you logged out, it opens again at login.")
     Checkbox("minimapButton", "Minimap Button", "Left-click opens the notepad, right-click opens these settings.",
         UpdateMinimapButton)
