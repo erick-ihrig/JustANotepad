@@ -297,7 +297,10 @@ local function ApplyFade()
     end
 end
 
+local CheckCursor -- defined with the page content
+
 local function OnUpdate(_, elapsed)
+    CheckCursor()
     local now = GetTime()
     if IsActive() then lastActive = now end
     local target = (now - lastActive < FADE_DELAY) and 1 or 0
@@ -401,16 +404,24 @@ local function CreateWindow()
     scrollFrame:EnableMouse(true)
     scrollFrame:EnableMouseWheel(true)
     -- Empty space in the page (below the text, around a to-do's checkbox): a click types at the end of the page,
-    -- click-and-hold drags the window.
+    -- click-and-hold drags the window. Done by watching the mouse while the button is down, not with
+    -- RegisterForDrag: that also takes drags that start on the text inside, which stops text selection.
     local dragged = false
-    scrollFrame:RegisterForDrag("LeftButton")
-    scrollFrame:SetScript("OnMouseDown", function() dragged = false end)
-    scrollFrame:SetScript("OnDragStart", function()
-        dragged = true
-        StartMove()
+    scrollFrame:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then return end
+        dragged = false
+        local startX, startY = GetCursorPosition()
+        self:SetScript("OnUpdate", function()
+            local x, y = GetCursorPosition()
+            if math.abs(x - startX) + math.abs(y - startY) > 6 then
+                dragged = true
+                self:SetScript("OnUpdate", nil)
+                StartMove()
+            end
+        end)
     end)
-    scrollFrame:SetScript("OnDragStop", StopMove)
-    scrollFrame:SetScript("OnMouseUp", function(_, button)
+    scrollFrame:SetScript("OnMouseUp", function(self, button)
+        self:SetScript("OnUpdate", nil)
         StopMove()
         if button ~= "LeftButton" or dragged then return end
         local blocks = CurrentPage().blocks
@@ -566,18 +577,40 @@ local function UpdateTodoLook(row)
     for index = #widths + 1, #row.strikes do row.strikes[index]:Hide() end
 end
 
--- Scrolls so the line being typed on (or just found) is in view. `top` and `bottom` are measured from the page's top.
-local function KeepInView(top, bottom)
-    local scroll, height = scrollFrame:GetVerticalScroll(), scrollFrame:GetHeight()
-    if top < scroll then
-        scrollFrame:SetVerticalScroll(math.max(0, top))
-    elseif bottom > scroll + height then
-        scrollFrame:SetVerticalScroll(bottom - height)
+-- How far down the page a block starts, from the blocks above it.
+local function OffsetInPage(widget)
+    local offset = 0
+    for index, candidate in ipairs(active) do
+        if candidate == widget then return offset + (index > 1 and BLOCK_GAP or 0) end
+        offset = offset + (candidate:GetHeight() or 0) + (index > 1 and BLOCK_GAP or 0)
     end
+    return offset
 end
 
-local function OffsetInPage(widget)
-    return (content:GetTop() or 0) - (widget:GetTop() or 0)
+-- Scrolls only when the line being typed on (or just found) is outside the box, and only far enough to bring
+-- it back in: typing past the bottom moves the page up one line. Never scrolls past the end of the page.
+-- `top` and `bottom` are measured from the page's top.
+local function KeepInView(top, bottom)
+    local height = scrollFrame:GetHeight() or 0
+    local range = math.max(0, (content:GetHeight() or 0) - height)
+    local scroll = scrollFrame:GetVerticalScroll() or 0
+    local target = scroll
+    if bottom > scroll + height then target = bottom - height end
+    if top < target then target = top end
+    target = math.max(0, math.min(range, target))
+    if math.abs(target - scroll) > 0.5 then scrollFrame:SetVerticalScroll(target) end
+end
+
+-- The cursor moved: noted here and looked at on the next frame, once the text has taken its new height.
+local cursorMoved
+function CheckCursor()
+    local moved = cursorMoved
+    if not moved then return end
+    cursorMoved = nil
+    if not moved.widget.block then return end
+    Relayout()
+    local top = OffsetInPage(moved.widget) - moved.y
+    KeepInView(top, top + moved.height)
 end
 
 -- Removes the block at `index` and joins the text around it. Returns the block and cursor position to type at next.
@@ -705,11 +738,10 @@ local function SetUpEdit(edit, widget)
         if block.todo then UpdateTodoLook(widget) end
         Relayout()
     end)
-    -- Keeps the line being typed on (or a search match) in view.
+    -- Keeps the line being typed on (or a search match) in view (CheckCursor).
     edit:SetScript("OnCursorChanged", function(self, _, y, _, cursorHeight)
         if self ~= (focused and focused.edit) and self ~= searchWidget then return end
-        local top = OffsetInPage(self) - (y or 0)
-        KeepInView(top, top + (cursorHeight or 0))
+        cursorMoved = { widget = widget, y = y or 0, height = cursorHeight or 0 }
     end)
     edit:SetScript("OnEscapePressed", edit.ClearFocus) -- Escape only ever stops typing
     edit:SetScript("OnEditFocusGained", function()
@@ -1016,10 +1048,6 @@ function FindNext()
                 local widget = WidgetFor(block)
                 if widget then
                     searchWidget = widget.edit
-                    if widget.isTodo then
-                        local top = OffsetInPage(widget)
-                        KeepInView(top, top + (widget:GetHeight() or 0))
-                    end
                     widget.edit:SetCursorPosition(last)
                     widget.edit:HighlightText(first - 1, last)
                 end
