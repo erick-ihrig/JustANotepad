@@ -10,17 +10,17 @@ as you type and fades into the background when you're not using it.
 - **Stays open.** Escape only stops typing. The notepad closes only from its close control, `/note`, the keybind
   or a launcher, and it reopens at login if it was open when you logged out.
 - **Pages.** Named tabs in a thin row above the text. A page is either for all your characters or for one
-  character only (those tabs are tinted in the class color); the + tab asks which kind to add. Right-click a tab
-  to rename, move or delete it.
+  character only (those tabs are tinted in the class color). Left-click + for an all-characters page, right-click
+  + for a character page. Right-click a tab to rename, move, convert or delete it.
 - **To-do lines.** Add a to-do anywhere in a page (the checkmark control, or Ctrl+T). Tick its box to strike it
-  through; hover it and click the red circle to delete it. Enter adds another to-do; Enter on an empty one goes
+  through; hover it and click the red circle to delete it. Long to-dos wrap, indented under their first line. Enter adds another to-do; Enter on an empty one goes
   back to ordinary text.
 - **Small controls.** In line with the tabs: undo (Ctrl+Z), add a to-do (Ctrl+T), the eye and close. Under the
   bottom-left corner: search all pages (Ctrl+F), with a box that pops out beside the icon. Each control can be
   hidden in the settings.
 - **Welcome page.** A new install opens with a short page explaining all of this. `/note welcome` adds it again.
-- **Moving and resizing.** Drag the margin around the text, a tab or the empty part of the tab row to move it; drag the bottom-right corner to
-  resize it. Lock Window in the settings stops both.
+- **Moving and resizing.** Drag a tab, the edge of the box or any empty space in it to move it; drag the
+  bottom-right corner to resize it. Lock Window in the settings stops both.
 
 ## Commands
 
