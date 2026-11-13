@@ -1,25 +1,27 @@
 -- Just a Notepad
 -- A text box that floats over the UI. A thin header row above it holds the page tabs (left) and small controls
--- (right). Saves as you type. The box, tabs and controls fade away
--- when the notepad isn't hovered or focused, leaving only the text (or nothing, with the eye toggle).
+-- (right). Saves as you type. The box, tabs and controls fade away when the notepad isn't hovered or focused,
+-- leaving only the text (or nothing, with the eye toggle).
 --
 -- Data (JustANotepadDB, account-wide):
 --   settings              options (DEFAULTS below), window position and size, whether it was open
---   pages                 shared pages: { title, text }
---   characterPages[key]   per-character pages, when that option is on
+--   pages                 pages every character sees
+--   characterPages[key]   pages only that character sees
+-- A page is { title, blocks }. A block is a stretch of text { text } or a to-do line { todo = true, text, done }.
+-- To-dos can sit anywhere between text; a page always ends with a text block, and two text blocks are never
+-- neighbours (they're merged).
 --
--- Commands: /note (toggle), /note settings, /note reset, /note size N, /note bg N
+-- Commands: /note (toggle), /note settings, /note reset, /note size N, /note bg N, /note welcome
 -- Keybind: Key Bindings > AddOns > Just a Notepad.
--- Sections, in order: data and pages, undo, window and fading, controls, search, tabs, launchers, settings,
--- commands and events.
+-- Sections, in order: data and pages, undo, window and fading, page content (text and to-do blocks), controls,
+-- search, tabs, launchers, settings, commands and events.
 
 local ADDON_NAME = ...
 
 local DEFAULTS = {
-    perCharacter = false,
-    showSearch = true,      -- which corner controls appear
+    showSearch = true,      -- which controls appear
     showUndo = true,
-    showLocation = true,
+    showTodo = true,
     showEye = true,
     showClose = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
@@ -36,6 +38,7 @@ local DEFAULTS = {
 
 local MAX_PAGES = 12
 local MAX_LETTERS = 20000
+local MAX_TODO_LETTERS = 200
 local MAX_TITLE = 24
 local MAX_UNDO = 30
 local TYPING_PAUSE = 2      -- seconds without typing before a new undo step starts
@@ -45,10 +48,12 @@ local PAD = 8               -- the margin around the text; dragging it moves the
 local CONTROL_SIZE = 14
 local TAB_HEIGHT = 18
 local HEADER = TAB_HEIGHT + 1   -- the row of tabs and controls above the text box
+local BLOCK_GAP = 2         -- between a to-do line and its neighbours
+local TODO_INDENT = 34      -- checkbox, then the delete circle, then the to-do's text
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local db
-local frame, box, scrollFrame, editBox, thumb, grip
+local frame, box, scrollFrame, content, thumb, grip, measure
 local controls, controlButtons, searchBar, searchBox, searchResult
 local tabBar, tabs, addTab, renameBox = nil, {}, nil, nil
 local category
@@ -62,7 +67,63 @@ end
 -- Data and pages
 ------------------------------------------------------------------------
 
+local function NewPage(title)
+    return { title = title, blocks = { { text = "" } } }
+end
+
+-- What a new install opens with: how to use and set up the notepad. It's an ordinary page, free to edit or delete.
+local function WelcomePage()
+    return { title = "Welcome", blocks = {
+        { text = "Welcome to Just a Notepad!\n"
+            .. "Click anywhere in here and type. Everything saves as you go, and you can delete all of this.\n\n"
+            .. "A few things to try:" },
+        { todo = true, text = "Tick this box to mark a to-do as done" },
+        { todo = true, text = "Hover a to-do and click the red circle to delete it" },
+        { todo = true, text = "Add your own with the checkmark button above, or Ctrl+T" },
+        { text = "Pages: click + to add a page for all your characters or for this one only. "
+            .. "Right-click a tab to rename, move or delete it.\n\n"
+            .. "Search: the magnifier under the bottom-left corner, or Ctrl+F.\n\n"
+            .. "Fading: move the mouse away and click somewhere else, and everything but the text fades out. "
+            .. "The eye button makes the text fade too.\n\n"
+            .. "Moving: drag a tab or the edge of the box. Resize from the bottom-right corner.\n\n"
+            .. "Settings: type /note settings to choose which buttons show, the text size, the background and more. "
+            .. "/note opens and closes the notepad. Escape only stops typing; it never closes it." },
+    } }
+end
+
+-- Puts a page's blocks in order: text neighbours merged, empty text dropped (except at the end), text at the end.
+local function Normalize(page)
+    local blocks = {}
+    for _, block in ipairs(page.blocks or {}) do
+        local last = blocks[#blocks]
+        block.text = block.text or ""
+        if block.todo then
+            blocks[#blocks + 1] = block
+        elseif last and not last.todo then
+            last.text = last.text .. "\n" .. block.text
+        else
+            blocks[#blocks + 1] = block
+        end
+    end
+    for index = #blocks - 1, 1, -1 do
+        if not blocks[index].todo and blocks[index].text == "" then table.remove(blocks, index) end
+    end
+    if #blocks == 0 or blocks[#blocks].todo then blocks[#blocks + 1] = { text = "" } end
+    page.blocks = blocks
+end
+
+local function PrepareList(list)
+    for _, page in ipairs(list) do
+        if not page.blocks then -- the first builds kept one text field per page
+            page.blocks = { { text = page.text or "" } }
+            page.text = nil
+        end
+        Normalize(page)
+    end
+end
+
 local function LoadData()
+    local fresh = JustANotepadDB == nil
     JustANotepadDB = JustANotepadDB or {}
     JustANotepadDB.settings = JustANotepadDB.settings or {}
     JustANotepadDB.pages = JustANotepadDB.pages or {}
@@ -71,7 +132,11 @@ local function LoadData()
     for key, value in pairs(DEFAULTS) do
         if db[key] == nil then db[key] = value end
     end
-    db.tabSide = nil -- the first build could put the tabs on the bottom or a side
+    -- Settings from earlier builds that are gone now.
+    db.tabSide, db.perCharacter, db.showLocation = nil, nil, nil
+    if fresh then JustANotepadDB.pages[1] = WelcomePage() end
+    PrepareList(JustANotepadDB.pages)
+    for _, list in pairs(JustANotepadDB.characterPages) do PrepareList(list) end
 end
 
 -- "Name-Realm". Forever characters also have a surname (UnitName's second value), which is part of the key.
@@ -82,73 +147,93 @@ local function CharacterKey()
     return name .. "-" .. (GetRealmName() or "")
 end
 
-local function GetPages()
-    local list = JustANotepadDB.pages
-    local key = db.perCharacter and CharacterKey()
-    if key then
-        JustANotepadDB.characterPages[key] = JustANotepadDB.characterPages[key] or {}
-        list = JustANotepadDB.characterPages[key]
-    end
-    if #list == 0 then list[1] = { title = "Page 1", text = "" } end
-    return list
+local function CharacterList(create)
+    local key = CharacterKey()
+    if not key then return nil end
+    if create then JustANotepadDB.characterPages[key] = JustANotepadDB.characterPages[key] or {} end
+    return JustANotepadDB.characterPages[key]
+end
+
+-- Every page this character sees, in tab order: the account-wide pages, then this character's own.
+-- Each entry is { page, list (the saved list the page is in), scope ("account" or "character") }.
+local function AllPages()
+    local account, character = JustANotepadDB.pages, CharacterList()
+    if #account == 0 and not (character and #character > 0) then account[1] = NewPage("Page 1") end
+    local all = {}
+    for _, page in ipairs(account) do all[#all + 1] = { page = page, list = account, scope = "account" } end
+    for _, page in ipairs(character or {}) do all[#all + 1] = { page = page, list = character, scope = "character" } end
+    return all
 end
 
 local function IndexOf(page)
-    for index, candidate in ipairs(GetPages()) do
-        if candidate == page then return index end
+    for index, entry in ipairs(AllPages()) do
+        if entry.page == page then return index end
     end
 end
 
 local function CurrentIndex()
-    return math.max(1, math.min(db.currentPage or 1, #GetPages()))
+    return math.max(1, math.min(db.currentPage or 1, #AllPages()))
 end
 
 local function CurrentPage()
-    return GetPages()[CurrentIndex()]
+    return AllPages()[CurrentIndex()].page
 end
 
-local LayoutTabs, UpdateControls -- defined further down
+local function CopyBlocks(blocks)
+    local copy = {}
+    for index, block in ipairs(blocks) do
+        copy[index] = { text = block.text, todo = block.todo, done = block.done }
+    end
+    return copy
+end
+
+local LayoutTabs, UpdateControls, RenderPage, FocusBlock -- defined further down
 
 local function ShowPage(index)
-    local pages = GetPages()
-    db.currentPage = math.max(1, math.min(index, #pages))
-    editBox:SetText(pages[db.currentPage].text or "")
-    editBox:SetCursorPosition(0)
+    db.currentPage = math.max(1, math.min(index, #AllPages()))
+    RenderPage()
     scrollFrame:SetVerticalScroll(0)
     LayoutTabs()
 end
 
 ------------------------------------------------------------------------
--- Undo: typing (one step per burst), inserted text and deleted pages
+-- Undo: typing (one step per burst), to-do changes and deleted pages
 ------------------------------------------------------------------------
 
 local undoStack = {}
 local typingStep, lastTypingTime = nil, 0
+local snapshot      -- the open page's blocks as they were before the latest keystroke
+local focused       -- the text block or to-do row being typed in
 
-local function PushUndo(label, undo)
-    local step = { label = label, undo = undo }
+local function PushUndo(undo)
+    local step = { undo = undo }
     undoStack[#undoStack + 1] = step
     if #undoStack > MAX_UNDO then table.remove(undoStack, 1) end
     UpdateControls()
     return step
 end
 
-local function RestoreText(page, text)
+local function RestoreBlocks(page, blocks)
     return function()
         local index = IndexOf(page)
         if not index then return end
-        page.text = text
+        page.blocks = CopyBlocks(blocks)
         ShowPage(index)
-        editBox:SetCursorPosition(#text)
     end
 end
 
-local function RememberTyping(page, before)
+-- Call before adding, removing or converting a block, so the change can be undone.
+local function RememberPage(page)
+    typingStep = nil
+    PushUndo(RestoreBlocks(page, CopyBlocks(page.blocks)))
+end
+
+local function RememberTyping(page)
     local now = GetTime()
     local top = undoStack[#undoStack]
     local sameBurst = top and top == typingStep and top.page == page and now - lastTypingTime < TYPING_PAUSE
     if not sameBurst then
-        typingStep = PushUndo("typing", RestoreText(page, before))
+        typingStep = PushUndo(RestoreBlocks(page, snapshot or page.blocks))
         typingStep.page = page
     end
     lastTypingTime = now
@@ -157,32 +242,20 @@ end
 local function Undo()
     local step = table.remove(undoStack)
     if not step then return end
+    -- Typing carries on from the same block afterwards, so Ctrl+Z can be pressed again.
+    local position
+    if focused then
+        for index, block in ipairs(CurrentPage().blocks) do
+            if block == focused.block then position = index end
+        end
+    end
     typingStep = nil
     step.undo()
     UpdateControls()
-end
-
--- Text put in by a button or shortcut: saved and undoable like typing.
-local function InsertText(text)
-    local page = CurrentPage()
-    local before = editBox:GetText()
-    editBox:SetFocus()
-    editBox:Insert(text)
-    page.text = editBox:GetText()
-    typingStep = nil
-    PushUndo("insert", RestoreText(page, before))
-end
-
-local function InsertLocation()
-    local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-    local info = mapID and C_Map.GetMapInfo(mapID)
-    local position = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
-    local zone = (info and info.name) or GetZoneText() or ""
     if position then
-        local x, y = position:GetXY()
-        InsertText(string.format("%s (%.1f, %.1f)", zone, x * 100, y * 100))
-    else
-        InsertText(zone) -- no coordinates indoors
+        local blocks = CurrentPage().blocks
+        local block = blocks[math.min(position, #blocks)]
+        FocusBlock(block, #block.text)
     end
 end
 
@@ -203,7 +276,7 @@ end
 
 local function IsActive()
     if moving or GetTime() < holdUntil then return true end
-    if editBox:HasFocus() or searchBox:HasFocus() or renameBox:HasFocus() then return true end
+    if focused or searchBox:HasFocus() or renameBox:HasFocus() then return true end
     return IsHovered()
 end
 
@@ -217,9 +290,9 @@ local function ApplyFade()
     thumb:SetAlpha(fade * 0.5)
     if db.fadeText then
         local low = db.fadedTextAlpha or 0
-        editBox:SetAlpha(low + (1 - low) * fade)
+        content:SetAlpha(low + (1 - low) * fade)
     else
-        editBox:SetAlpha(1)
+        content:SetAlpha(1)
     end
 end
 
@@ -236,8 +309,7 @@ end
 local function ApplyLook()
     box:SetBackdropColor(0, 0, 0, db.backgroundAlpha)
     box:SetBackdropBorderColor(0.35, 0.35, 0.35, math.min(1, db.backgroundAlpha + 0.3))
-    local font, _, flags = ChatFontNormal:GetFont()
-    editBox:SetFont(font, db.fontSize, flags)
+    RenderPage() -- the text size
     ApplyFade()
     LayoutTabs()
 end
@@ -291,13 +363,7 @@ local function UpdateThumb()
     thumb:Show()
 end
 
-local function FocusAtEnd(_, button)
-    if button ~= "LeftButton" then return end
-    editBox:SetFocus()
-    editBox:SetCursorPosition(#editBox:GetText())
-end
-
-local SetSearchShown, FindNext -- defined in the search section
+local SetSearchShown, FindNext, AddTodo, ResizeBlocks -- defined further down
 
 local function CreateWindow()
     frame = CreateFrame("Frame", "JustANotepadFrame", UIParent)
@@ -333,7 +399,12 @@ local function CreateWindow()
     scrollFrame:SetPoint("BOTTOMRIGHT", -PAD, PAD)
     scrollFrame:EnableMouse(true)
     scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseDown", FocusAtEnd) -- clicking below the text types at the end
+    -- Clicking below the text (or beside a to-do) types at the end of the page.
+    scrollFrame:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
+        local blocks = CurrentPage().blocks
+        FocusBlock(blocks[#blocks], #blocks[#blocks].text)
+    end)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local range = self:GetVerticalScrollRange() or 0
         local target = self:GetVerticalScroll() - delta * db.fontSize * 3
@@ -347,53 +418,13 @@ local function CreateWindow()
     scrollFrame:SetScript("OnVerticalScroll", UpdateThumb)
     scrollFrame:SetScript("OnScrollRangeChanged", UpdateThumb)
 
-    editBox = CreateFrame("EditBox", "JustANotepadEditBox", scrollFrame)
-    editBox:SetMultiLine(true)
-    editBox:SetAutoFocus(false)
-    editBox:SetMaxLetters(MAX_LETTERS)
-    editBox:SetFontObject(ChatFontNormal)
-    editBox:SetShadowColor(0, 0, 0, 1) -- keeps the text readable when it floats alone
-    editBox:SetShadowOffset(1, -1)
-    editBox:SetWidth(200)
-    scrollFrame:SetScrollChild(editBox)
-    scrollFrame:SetScript("OnSizeChanged", function(_, width)
-        editBox:SetWidth(width)
-        UpdateThumb()
-    end)
-
-    local textBefore = ""
-    editBox:SetScript("OnTextChanged", function(self, userInput)
-        local text = self:GetText()
-        if userInput then
-            local page = CurrentPage()
-            RememberTyping(page, textBefore)
-            page.text = text -- saved as you type
-        end
-        textBefore = text
-    end)
-    -- Keeps the cursor in view while typing.
-    editBox:SetScript("OnCursorChanged", function(_, _, y, _, cursorHeight)
-        local top = -y
-        local bottom = top + (cursorHeight or 0)
-        local scroll, height = scrollFrame:GetVerticalScroll(), scrollFrame:GetHeight()
-        if top < scroll then
-            scrollFrame:SetVerticalScroll(math.max(0, top))
-        elseif bottom > scroll + height then
-            scrollFrame:SetVerticalScroll(bottom - height)
-        end
-    end)
-    -- Escape only ever stops typing.
-    editBox:SetScript("OnEscapePressed", editBox.ClearFocus)
-    editBox:SetScript("OnKeyDown", function(_, key)
-        if not IsControlKeyDown() then return end
-        if key == "F" then
-            SetSearchShown(true)
-        elseif key == "Z" then
-            Undo()
-        elseif key == "L" then
-            InsertLocation()
-        end
-    end)
+    -- The page: its text blocks and to-do rows are stacked inside this.
+    content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(200, 1)
+    scrollFrame:SetScrollChild(content)
+    scrollFrame:SetScript("OnSizeChanged", function() ResizeBlocks() end)
+    measure = content:CreateFontString(nil, "BACKGROUND", "GameFontHighlightSmall") -- measures to-do text, never shown
+    measure:Hide()
 
     grip = CreateFrame("Button", nil, frame)
     grip:SetSize(12, 12)
@@ -419,7 +450,7 @@ local function CreateWindow()
     frame:SetScript("OnHide", function()
         db.open = false
         StopMove()
-        editBox:ClearFocus()
+        if focused then focused.edit:ClearFocus() end
         SetSearchShown(false)
         renameBox:Hide()
     end)
@@ -430,11 +461,360 @@ local function Toggle()
 end
 
 ------------------------------------------------------------------------
+-- Page content: text blocks (multi-line edit boxes) and to-do rows, stacked top to bottom
+------------------------------------------------------------------------
+
+local textPool, todoPool, active = {}, {}, {}   -- spare widgets, and the ones showing the open page
+local fontFile, fontFlags
+local searchWidget  -- the edit box showing the latest search match
+
+local function BlockIndex(page, block)
+    for index, candidate in ipairs(page.blocks) do
+        if candidate == block then return index end
+    end
+end
+
+local function WidgetFor(block)
+    for _, widget in ipairs(active) do
+        if widget.block == block then return widget end
+    end
+end
+
+function FocusBlock(block, cursor)
+    local widget = block and WidgetFor(block)
+    if not widget then return end
+    widget.edit:SetFocus()
+    widget.edit:SetCursorPosition(cursor or 0)
+end
+
+-- Keeps the page's height (and so the scroll range) in step with its blocks.
+local sizing = false
+local function Relayout()
+    if sizing then return end
+    sizing = true
+    local total = 0
+    for index, widget in ipairs(active) do
+        -- An empty text block still needs a line to click on and type in.
+        if not widget.isTodo and (widget:GetHeight() or 0) < db.fontSize then widget:SetHeight(db.fontSize + 2) end
+        total = total + (widget:GetHeight() or 0) + (index > 1 and BLOCK_GAP or 0)
+    end
+    content:SetHeight(math.max(1, total))
+    sizing = false
+    UpdateThumb()
+end
+
+-- Ticked to-dos are grey with a line through them.
+local function UpdateTodoLook(row)
+    local block = row.block
+    if not block then return end
+    row.mark:SetShown(block.done and true or false)
+    local shade = block.done and 0.5 or 1
+    row.edit:SetTextColor(shade, shade, shade)
+    if block.done and block.text ~= "" then
+        measure:SetFont(fontFile, db.fontSize, fontFlags)
+        measure:SetText(block.text)
+        row.strike:SetWidth(math.max(1, math.min(measure:GetStringWidth() or 0, row.textWidth or 0)))
+        row.strike:Show()
+    else
+        row.strike:Hide()
+    end
+end
+
+-- Scrolls so the line being typed on (or just found) is in view. `top` and `bottom` are measured from the page's top.
+local function KeepInView(top, bottom)
+    local scroll, height = scrollFrame:GetVerticalScroll(), scrollFrame:GetHeight()
+    if top < scroll then
+        scrollFrame:SetVerticalScroll(math.max(0, top))
+    elseif bottom > scroll + height then
+        scrollFrame:SetVerticalScroll(bottom - height)
+    end
+end
+
+local function OffsetInPage(widget)
+    return (content:GetTop() or 0) - (widget:GetTop() or 0)
+end
+
+-- Removes the block at `index` and joins the text around it. Returns the block and cursor position to type at next.
+local function RemoveBlock(page, index)
+    local blocks = page.blocks
+    local before, after = blocks[index - 1], blocks[index + 1]
+    table.remove(blocks, index)
+    if before and not before.todo and after and not after.todo then
+        local cursor = #before.text + 1
+        before.text = before.text .. "\n" .. after.text
+        table.remove(blocks, index)
+        return before, cursor
+    elseif after and not after.todo then
+        return after, 0
+    elseif before and not before.todo then
+        before.text = before.text .. "\n" -- a new line under the text above, before the next to-do
+        return before, #before.text
+    end
+    table.insert(blocks, index, { text = "" })
+    return blocks[index], 0
+end
+
+local function DeleteTodo(block)
+    local page = CurrentPage()
+    local index = BlockIndex(page, block)
+    if not index then return end
+    RememberPage(page)
+    table.remove(page.blocks, index)
+    Normalize(page)
+    RenderPage()
+end
+
+-- Adds a to-do line: under the line being typed on (splitting the text there), under the to-do being typed in,
+-- or at the end of the page.
+function AddTodo()
+    local page = CurrentPage()
+    local blocks = page.blocks
+    local todo = { todo = true, text = "" }
+    local index = focused and BlockIndex(page, focused.block)
+    RememberPage(page)
+    if index and blocks[index].todo then
+        table.insert(blocks, index + 1, todo)
+    elseif index then
+        local text = blocks[index].text
+        local lineEnd = text:find("\n", focused.edit:GetCursorPosition() + 1, true)
+        local above = lineEnd and text:sub(1, lineEnd - 1) or text
+        local below = lineEnd and text:sub(lineEnd + 1) or ""
+        if above:sub(-1) == "\n" then above = above:sub(1, -2) end -- typing on an empty line: the to-do takes its place
+        blocks[index].text = above
+        table.insert(blocks, index + 1, todo)
+        table.insert(blocks, index + 2, { text = below })
+    else
+        table.insert(blocks, #blocks + 1, todo)
+    end
+    Normalize(page)
+    RenderPage()
+    FocusBlock(todo, 0)
+end
+
+-- Enter in a to-do: a new to-do under it. Enter in an empty to-do: back to ordinary text.
+local function TodoEnter(row)
+    local page = CurrentPage()
+    local index = BlockIndex(page, row.block)
+    if not index then return end
+    RememberPage(page)
+    if row.block.text == "" then
+        local block, cursor = RemoveBlock(page, index)
+        RenderPage()
+        FocusBlock(block, cursor)
+    else
+        local todo = { todo = true, text = "" }
+        table.insert(page.blocks, index + 1, todo)
+        RenderPage()
+        FocusBlock(todo, 0)
+    end
+end
+
+-- Up and Down step from one block to the next at a block's first and last position.
+local function StepFocus(widget, key)
+    local page = CurrentPage()
+    local index = BlockIndex(page, widget.block)
+    if not index then return end
+    local edit = widget.edit
+    local cursor = edit:GetCursorPosition()
+    if key == "UP" and (widget.isTodo or cursor == 0) and page.blocks[index - 1] then
+        FocusBlock(page.blocks[index - 1], #page.blocks[index - 1].text)
+    elseif key == "DOWN" and (widget.isTodo or cursor >= #edit:GetText()) and page.blocks[index + 1] then
+        FocusBlock(page.blocks[index + 1], 0)
+    end
+end
+
+-- Scripts every block's edit box shares. `widget` is the text block itself, or the to-do row around the edit box.
+local function SetUpEdit(edit, widget)
+    widget.edit = edit
+    edit:SetAutoFocus(false)
+    edit:SetFontObject(ChatFontNormal)
+    edit:SetShadowColor(0, 0, 0, 1) -- keeps the text readable when it floats alone
+    edit:SetShadowOffset(1, -1)
+    edit:SetScript("OnTextChanged", function(self, userInput)
+        local block = widget.block
+        if not block then return end
+        if userInput then
+            local page = CurrentPage()
+            RememberTyping(page)
+            block.text = self:GetText() -- saved as you type
+            snapshot = CopyBlocks(page.blocks)
+        end
+        if block.todo then UpdateTodoLook(widget) end
+        Relayout()
+    end)
+    edit:SetScript("OnEscapePressed", edit.ClearFocus) -- Escape only ever stops typing
+    edit:SetScript("OnEditFocusGained", function()
+        focused = widget
+        if widget.isTodo then
+            local top = OffsetInPage(widget)
+            KeepInView(top, top + (widget:GetHeight() or 0))
+        end
+    end)
+    edit:SetScript("OnEditFocusLost", function()
+        if focused == widget then focused = nil end
+    end)
+    edit:SetScript("OnKeyDown", function(_, key)
+        if not IsControlKeyDown() then return end
+        if key == "F" then
+            SetSearchShown(true)
+        elseif key == "Z" then
+            Undo()
+        elseif key == "T" then
+            AddTodo()
+        end
+    end)
+    if edit:HasScript("OnArrowPressed") then
+        edit:SetScript("OnArrowPressed", function(_, key) StepFocus(widget, key) end)
+    end
+end
+
+local function CreateTextBlock()
+    local edit = CreateFrame("EditBox", nil, content)
+    edit:SetMultiLine(true)
+    edit:SetMaxLetters(MAX_LETTERS)
+    SetUpEdit(edit, edit)
+    edit:SetScript("OnSizeChanged", Relayout)
+    edit:SetScript("OnCursorChanged", function(self, _, y, _, cursorHeight)
+        if self ~= (focused and focused.edit) and self ~= searchWidget then return end
+        local top = OffsetInPage(self) - y
+        KeepInView(top, top + (cursorHeight or 0))
+    end)
+    return edit
+end
+
+local function CreateTodoRow()
+    local row = CreateFrame("Frame", nil, content)
+    row.isTodo = true
+
+    -- The checkbox: a small dark square with a thin edge, and a check mark when ticked.
+    local check = CreateFrame("Button", nil, row)
+    check:SetSize(13, 13)
+    check:SetPoint("LEFT", 1, 0)
+    local edge = check:CreateTexture(nil, "BACKGROUND")
+    edge:SetAllPoints()
+    edge:SetColorTexture(0.6, 0.6, 0.6, 0.9)
+    local inside = check:CreateTexture(nil, "BORDER")
+    inside:SetPoint("TOPLEFT", 1, -1)
+    inside:SetPoint("BOTTOMRIGHT", -1, 1)
+    inside:SetColorTexture(0, 0, 0, 0.9)
+    row.mark = check:CreateTexture(nil, "ARTWORK")
+    row.mark:SetPoint("CENTER")
+    row.mark:SetSize(18, 18)
+    row.mark:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    check:SetScript("OnClick", function()
+        if not row.block then return end
+        RememberPage(CurrentPage())
+        row.block.done = not row.block.done or nil
+        snapshot = CopyBlocks(CurrentPage().blocks)
+        UpdateTodoLook(row)
+    end)
+
+    -- The delete circle: shows next to the checkbox while the mouse is on the row.
+    local delete = CreateFrame("Button", nil, row)
+    delete:SetSize(13, 13)
+    delete:SetPoint("LEFT", check, "RIGHT", 3, 0)
+    delete:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+    delete:SetAlpha(0)
+    delete:SetScript("OnClick", function()
+        if row.block then DeleteTodo(row.block) end
+    end)
+    delete:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:SetText("Delete this to-do", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    delete:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row:SetScript("OnUpdate", function(self)
+        delete:SetAlpha(self:IsMouseOver() and 1 or 0)
+    end)
+
+    local edit = CreateFrame("EditBox", nil, row)
+    edit:SetPoint("LEFT", TODO_INDENT, 0)
+    edit:SetPoint("RIGHT", 0, 0)
+    edit:SetMaxLetters(MAX_TODO_LETTERS)
+    SetUpEdit(edit, row)
+    edit:SetScript("OnEnterPressed", function() TodoEnter(row) end)
+
+    row.strike = edit:CreateTexture(nil, "OVERLAY")
+    row.strike:SetColorTexture(0.6, 0.6, 0.6, 1)
+    row.strike:SetHeight(1)
+    row.strike:SetPoint("LEFT", 0, 0)
+    row.strike:Hide()
+    return row
+end
+
+-- Rebuilds the open page from its blocks. Only for opening a page and for adding or removing blocks: typing
+-- never comes through here (it would take the cursor away).
+function RenderPage()
+    if not content then return end
+    local page = CurrentPage()
+    for _, widget in ipairs(active) do
+        widget.block = nil
+        widget.edit:ClearFocus()
+        widget:Hide()
+        local pool = widget.isTodo and todoPool or textPool
+        pool[#pool + 1] = widget
+    end
+    active = {}
+    searchWidget = nil
+
+    local _
+    fontFile, _, fontFlags = ChatFontNormal:GetFont()
+    local width = math.max(40, scrollFrame:GetWidth() or 200)
+    content:SetWidth(width)
+    local above
+    for _, block in ipairs(page.blocks) do
+        local widget
+        if block.todo then
+            widget = table.remove(todoPool) or CreateTodoRow()
+            widget:SetHeight(db.fontSize + 6)
+            widget.edit:SetHeight(db.fontSize + 6)
+            widget.textWidth = width - TODO_INDENT
+        else
+            widget = table.remove(textPool) or CreateTextBlock()
+        end
+        widget.block = block
+        widget:ClearAllPoints()
+        if above then
+            widget:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, -BLOCK_GAP)
+        else
+            widget:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+        end
+        widget:SetWidth(width)
+        widget.edit:SetFont(fontFile, db.fontSize, fontFlags)
+        widget.edit:SetTextColor(1, 1, 1)
+        widget:Show()
+        active[#active + 1] = widget
+        widget.edit:SetText(block.text)
+        widget.edit:SetCursorPosition(0)
+        if block.todo then UpdateTodoLook(widget) end
+        above = widget
+    end
+    snapshot = CopyBlocks(page.blocks)
+    Relayout()
+end
+
+-- The window was resized: the blocks follow its width.
+function ResizeBlocks()
+    if not content then return end
+    local width = math.max(40, scrollFrame:GetWidth() or 200)
+    content:SetWidth(width)
+    for _, widget in ipairs(active) do
+        widget:SetWidth(width)
+        if widget.isTodo then
+            widget.textWidth = width - TODO_INDENT
+            UpdateTodoLook(widget)
+        end
+    end
+    Relayout()
+end
+
+------------------------------------------------------------------------
 -- Controls: small icons at the right end of the header row, in line with the tabs.
 -- The search icon sits on its own under the bottom-left corner of the window.
 ------------------------------------------------------------------------
 
-local CONTROL_ORDER = { "Close", "Eye", "Location", "Undo" } -- right to left
+local CONTROL_ORDER = { "Close", "Eye", "Todo", "Undo" } -- right to left
 
 local function CreateControl(texture, tooltip, onClick, parent)
     local button = CreateFrame("Button", nil, parent or controls)
@@ -529,7 +909,7 @@ local function CreateControls()
             UpdateControls()
             ApplyFade()
         end),
-        Location = CreateControl("Interface\\Icons\\INV_Misc_Map_01", "Insert your location (Ctrl+L)", InsertLocation),
+        Todo = CreateControl("Interface\\Buttons\\UI-CheckBox-Check", "Add a to-do line (Ctrl+T)", function() AddTodo() end),
         Undo = CreateControl("Interface\\Buttons\\UI-RefreshButton", function()
             return (#undoStack > 0) and "Undo (Ctrl+Z)" or "Nothing to undo"
         end, Undo),
@@ -539,7 +919,6 @@ local function CreateControls()
     }
     controlButtons.Search:SetPoint("CENTER")
     controlButtons.Eye.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    controlButtons.Location.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 end
 
 ------------------------------------------------------------------------
@@ -547,23 +926,45 @@ end
 -- Enter finds the next match; Escape closes it.
 ------------------------------------------------------------------------
 
+local searchAt -- where the latest match ended: { page, block, position }
+
 function FindNext()
     local query = searchBox:GetText():lower()
     if query == "" then return end
-    local pages = GetPages()
+    local all = AllPages()
     local start = CurrentIndex()
-    local from = editBox:GetCursorPosition() + 1
-    for step = 0, #pages do -- the last step comes back to the first page searched, from its top
-        local index = (start - 1 + step) % #pages + 1
-        local first, last = (pages[index].text or ""):lower():find(query, step == 0 and from or 1, true)
-        if first then
-            if index ~= CurrentIndex() then ShowPage(index) end
-            editBox:SetCursorPosition(last)
-            editBox:HighlightText(first - 1, last)
-            searchResult:SetText("")
-            return
+    local startBlock, startPosition = 1, 1
+    if searchAt and searchAt.page == all[start].page then
+        startBlock = BlockIndex(searchAt.page, searchAt.block) or 1
+        startPosition = searchAt.position + 1
+    end
+    if searchWidget then searchWidget:HighlightText(0, 0) end
+    for step = 0, #all do -- the last step comes back to the first page searched, from its top
+        local index = (start - 1 + step) % #all + 1
+        local page = all[index].page
+        for blockIndex = (step == 0 and startBlock or 1), #page.blocks do
+            local block = page.blocks[blockIndex]
+            local from = (step == 0 and blockIndex == startBlock) and startPosition or 1
+            local first, last = block.text:lower():find(query, from, true)
+            if first then
+                if index ~= CurrentIndex() then ShowPage(index) end
+                searchAt = { page = page, block = block, position = last }
+                local widget = WidgetFor(block)
+                if widget then
+                    searchWidget = widget.edit
+                    if widget.isTodo then
+                        local top = OffsetInPage(widget)
+                        KeepInView(top, top + (widget:GetHeight() or 0))
+                    end
+                    widget.edit:SetCursorPosition(last)
+                    widget.edit:HighlightText(first - 1, last)
+                end
+                searchResult:SetText("")
+                return
+            end
         end
     end
+    searchAt = nil
     searchResult:SetText("none")
 end
 
@@ -571,11 +972,13 @@ function SetSearchShown(shown)
     if not searchBox then return end
     searchBox:SetShown(shown)
     searchResult:SetText("")
+    searchAt = nil
     if shown then
         searchBox:SetFocus()
         searchBox:HighlightText()
     else
         searchBox:ClearFocus()
+        if searchWidget then searchWidget:HighlightText(0, 0) end
     end
 end
 
@@ -594,45 +997,73 @@ local function CreateSearch()
     searchResult:SetTextColor(1, 0.3, 0.25)
     searchBox:SetScript("OnEnterPressed", FindNext)
     searchBox:SetScript("OnEscapePressed", function() SetSearchShown(false) end)
-    searchBox:SetScript("OnTextChanged", function() searchResult:SetText("") end)
+    searchBox:SetScript("OnTextChanged", function(_, userInput)
+        searchResult:SetText("")
+        if userInput then searchAt = nil end
+    end)
 end
 
 ------------------------------------------------------------------------
--- Page tabs: in the header row above the text box, left of the controls. Right-click for the menu.
+-- Page tabs: in the header row above the text box, left of the controls. Account-wide pages come first, then
+-- this character's own (tinted in the class color). Right-click a tab for its menu.
 ------------------------------------------------------------------------
 
-local function AddPage()
-    local pages = GetPages()
-    if #pages >= MAX_PAGES then
+local function CharacterName()
+    return UnitName("player") or "this character"
+end
+
+local function CharacterColor()
+    local class = UnitClass and select(2, UnitClass("player"))
+    local color = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    if color then return color.r, color.g, color.b end
+    return 0.55, 0.8, 1
+end
+
+local function AddPage(scope)
+    if #AllPages() >= MAX_PAGES then
         Print("That's the most pages (" .. MAX_PAGES .. ").")
         return
     end
-    pages[#pages + 1] = { title = "Page " .. (#pages + 1), text = "" }
-    ShowPage(#pages)
+    local list = scope == "character" and CharacterList(true) or JustANotepadDB.pages
+    local page = NewPage("Page " .. (#list + 1))
+    list[#list + 1] = page
+    ShowPage(IndexOf(page))
 end
 
 local function DeletePage(page)
-    local pages = GetPages()
     local index = IndexOf(page)
-    if not index then return end
-    table.remove(pages, index)
+    local all = AllPages()
+    if not index or #all <= 1 then return end
+    local list = all[index].list
+    local position
+    for at, candidate in ipairs(list) do
+        if candidate == page then position = at end
+    end
+    table.remove(list, position)
     typingStep = nil
-    PushUndo("delete", function()
-        local list = GetPages()
-        local at = math.min(index, #list + 1)
-        table.insert(list, at, page)
-        ShowPage(at)
+    PushUndo(function()
+        table.insert(list, math.min(position, #list + 1), page)
+        ShowPage(IndexOf(page) or 1)
     end)
-    ShowPage(math.min(index, #GetPages()))
+    ShowPage(math.min(index, #AllPages()))
+end
+
+-- Whether a page can move one place left or right: only among the pages of its own kind.
+local function CanMove(page, offset)
+    local all = AllPages()
+    local index = IndexOf(page)
+    local target = index and all[index + offset]
+    return target ~= nil and target.list == all[index].list, index, all
 end
 
 local function MovePage(page, offset)
-    local pages = GetPages()
-    local index = IndexOf(page)
-    local target = index and index + offset
-    if not target or target < 1 or target > #pages then return end
+    local ok, index, all = CanMove(page, offset)
+    if not ok then return end
     local current = CurrentPage()
-    pages[index], pages[target] = pages[target], pages[index]
+    local list, other = all[index].list, all[index + offset].page
+    for at, candidate in ipairs(list) do
+        if candidate == page then list[at] = other elseif candidate == other then list[at] = page end
+    end
     db.currentPage = IndexOf(current)
     LayoutTabs()
 end
@@ -652,8 +1083,15 @@ StaticPopupDialogs["JUSTANOTEPAD_DELETE"] = {
     hideOnEscape = true,
 }
 
+local function IsEmpty(page)
+    for _, block in ipairs(page.blocks) do
+        if block.todo or block.text ~= "" then return false end
+    end
+    return true
+end
+
 local function AskToDelete(page)
-    if (page.text or "") == "" then
+    if IsEmpty(page) then
         DeletePage(page) -- nothing to lose
         return
     end
@@ -675,28 +1113,45 @@ local function StartRename(page)
     renameBox:HighlightText()
 end
 
-local function ShowTabMenu(tab)
-    if not (MenuUtil and MenuUtil.CreateContextMenu) then return end
-    local index = tab:GetID()
-    local pages = GetPages()
-    local page = pages[index]
-    local menu = MenuUtil.CreateContextMenu(tab, function(_, root)
-        root:CreateTitle(page.title)
-        root:CreateButton("Rename", function() StartRename(page) end)
-        local back = root:CreateButton("Move Left", function() MovePage(page, -1) end)
-        back:SetEnabled(index > 1)
-        local forward = root:CreateButton("Move Right", function() MovePage(page, 1) end)
-        forward:SetEnabled(index < #pages)
-        local delete = root:CreateButton("Delete", function() AskToDelete(page) end)
-        delete:SetEnabled(#pages > 1)
-    end)
-    -- Keep the notepad visible while its menu is open.
+-- Opens a menu on `owner` and keeps the notepad visible while it's open.
+local function OpenMenu(owner, build)
+    if not (MenuUtil and MenuUtil.CreateContextMenu) then return false end
+    local menu = MenuUtil.CreateContextMenu(owner, build)
     if menu and menu.SetClosedCallback then
         holdUntil = math.huge
         menu:SetClosedCallback(function() holdUntil = GetTime() + FADE_DELAY end)
     else
         holdUntil = GetTime() + 4
     end
+    return true
+end
+
+local function ShowTabMenu(tab)
+    local all = AllPages()
+    local entry = all[tab:GetID()]
+    if not entry then return end
+    local page = entry.page
+    OpenMenu(tab, function(_, root)
+        root:CreateTitle(page.title .. (entry.scope == "character" and (" (" .. CharacterName() .. " only)")
+            or " (all characters)"))
+        root:CreateButton("Rename", function() StartRename(page) end)
+        local back = root:CreateButton("Move Left", function() MovePage(page, -1) end)
+        back:SetEnabled((CanMove(page, -1)))
+        local forward = root:CreateButton("Move Right", function() MovePage(page, 1) end)
+        forward:SetEnabled((CanMove(page, 1)))
+        local delete = root:CreateButton("Delete", function() AskToDelete(page) end)
+        delete:SetEnabled(#all > 1)
+    end)
+end
+
+-- The + tab asks which kind of page to add.
+local function ShowAddMenu()
+    local opened = OpenMenu(addTab, function(_, root)
+        root:CreateTitle("New page")
+        root:CreateButton("For all characters", function() AddPage("account") end)
+        root:CreateButton("For " .. CharacterName() .. " only", function() AddPage("character") end)
+    end)
+    if not opened then AddPage("account") end
 end
 
 local function CreateTab()
@@ -732,21 +1187,23 @@ local function GetTab(index)
     return tabs[index]
 end
 
-local function StyleTab(tab, selected)
+local function StyleTab(tab, selected, scope)
     local alpha = db.backgroundAlpha
+    local r, g, b = 1, 1, 1
+    if scope == "character" then r, g, b = CharacterColor() end
     if selected then
         tab.back:SetColorTexture(0, 0, 0, math.min(1, alpha + 0.2))
-        tab.text:SetTextColor(1, 1, 1)
+        tab.text:SetTextColor(r, g, b)
     else
         tab.back:SetColorTexture(0, 0, 0, alpha * 0.6)
-        tab.text:SetTextColor(0.6, 0.6, 0.6)
+        tab.text:SetTextColor(r * 0.6, g * 0.6, b * 0.6)
     end
 end
 
 function LayoutTabs()
     if not tabBar then return end
-    local pages = GetPages()
-    local count = #pages
+    local all = AllPages()
+    local count = #all
     local current = CurrentIndex()
     local addWidth = 20
     local showAdd = count < MAX_PAGES
@@ -757,9 +1214,9 @@ function LayoutTabs()
 
     -- Each tab is as wide as its name; when they don't fit, they all shrink evenly.
     local widths, total = {}, 0
-    for index, page in ipairs(pages) do
+    for index, entry in ipairs(all) do
         local tab = GetTab(index)
-        tab.text:SetText(page.title)
+        tab.text:SetText(entry.page.title)
         widths[index] = math.min(120, math.ceil(tab.text:GetStringWidth() or 40) + 14)
         total = total + widths[index]
     end
@@ -778,7 +1235,7 @@ function LayoutTabs()
 
     for index, tab in ipairs(tabs) do
         tab:SetShown(index <= count)
-        if index <= count then StyleTab(tab, index == current) end
+        if index <= count then StyleTab(tab, index == current, all[index].scope) end
     end
     addTab:SetShown(showAdd)
     StyleTab(addTab, false)
@@ -794,7 +1251,7 @@ local function CreateTabs()
     addTab = CreateTab()
     addTab:SetWidth(20)
     addTab.text:SetText("+")
-    addTab:SetScript("OnClick", AddPage)
+    addTab:SetScript("OnClick", ShowAddMenu)
     addTab:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
         GameTooltip:SetText("New page", 1, 1, 1)
@@ -942,18 +1399,13 @@ local function RegisterOptions()
     end
     local function Percent(value) return math.floor(value * 100 + 0.5) .. "%" end
 
-    Header("Pages")
-    Checkbox("perCharacter", "Separate Pages per Character",
-        "Each character gets their own pages. Off: one set of pages for all characters.",
-        function() if frame then ShowPage(1) end end)
-
     Header("Controls")
-    Checkbox("showSearch", "Search", "Shows the search control under the bottom-left corner. Ctrl+F works either way.",
-        UpdateControls)
+    Checkbox("showTodo", "Add To-Do", "Shows the control that adds a to-do line. Ctrl+T works either way.", UpdateControls)
     Checkbox("showUndo", "Undo", "Shows the undo control. Ctrl+Z works either way.", UpdateControls)
-    Checkbox("showLocation", "Insert Location", "Shows the location control. Ctrl+L works either way.", UpdateControls)
     Checkbox("showEye", "Text Fade Toggle (Eye)", "Shows the eye control, which switches Fade the Text Too.", UpdateControls)
     Checkbox("showClose", "Close", "Shows the close control. /note and the keybind work either way.", UpdateControls)
+    Checkbox("showSearch", "Search", "Shows the search control under the bottom-left corner. Ctrl+F works either way.",
+        UpdateControls)
 
     Header("Look")
     Checkbox("fadeText", "Fade the Text Too",
@@ -962,7 +1414,8 @@ local function RegisterOptions()
     Slider("fadedTextAlpha", "Faded Text Visibility",
         "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent, ApplyFade)
     Slider("backgroundAlpha", "Background", "How solid the box behind the text is.", 0, 1, 0.05, Percent, ApplyLook)
-    Slider("fontSize", "Text Size", "The size of the note text.", 8, 28, 1, function(value) return tostring(value) end, ApplyLook)
+    Slider("fontSize", "Text Size", "The size of the note text.", 8, 28, 1, function(value) return tostring(value) end,
+        ApplyLook)
 
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized.")
@@ -998,16 +1451,25 @@ SlashCmdList.JUSTANOTEPAD = function(message)
     elseif command == "bg" and tonumber(value) then
         db.backgroundAlpha = math.max(0, math.min(100, tonumber(value))) / 100
         ApplyLook()
+    elseif command == "welcome" then
+        if #AllPages() >= MAX_PAGES then
+            Print("That's the most pages (" .. MAX_PAGES .. "). Delete one to see the welcome page again.")
+            return
+        end
+        local page = WelcomePage()
+        table.insert(JustANotepadDB.pages, page)
+        frame:Show()
+        ShowPage(IndexOf(page))
     else
         Print("/note opens or closes it. Also: /note settings, /note reset (position and size), "
-            .. "/note size 8-28, /note bg 0-100")
+            .. "/note size 8-28, /note bg 0-100, /note welcome (adds the welcome page again)")
     end
 end
 
 -- A click anywhere outside the notepad stops typing, so your keys go back to the game.
 local function ClearFocusIfClickedOutside()
     if frame:IsShown() and not IsHovered() then
-        editBox:ClearFocus()
+        if focused then focused.edit:ClearFocus() end
         searchBox:ClearFocus()
         renameBox:ClearFocus()
     end
