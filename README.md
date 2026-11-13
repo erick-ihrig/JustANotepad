@@ -11,7 +11,8 @@ as you type and fades into the background when you're not using it.
   or a launcher, and it reopens at login if it was open when you logged out.
 - **Pages.** Named tabs in a thin row above the text. Right-click a tab to rename, move or delete it.
   Pages can be shared by all characters or kept per character.
-- **Small controls in line with the tabs.** Search all pages (Ctrl+F), undo (Ctrl+Z), insert your location (Ctrl+L), the eye and
+- **Small controls in line with the tabs.** Search all pages (Ctrl+F; the search box opens under the
+  bottom-left corner), undo (Ctrl+Z), insert your location (Ctrl+L), the eye and
   close. Each can be hidden in the settings.
 - **Moving and resizing.** Drag the margin around the text, a tab or the empty part of the tab row to move it; drag the bottom-right corner to
   resize it. Lock Window in the settings stops both.

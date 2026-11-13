@@ -198,13 +198,14 @@ local moving = false
 local function IsActive()
     if moving or GetTime() < holdUntil then return true end
     if editBox:HasFocus() or searchBox:HasFocus() or renameBox:HasFocus() then return true end
-    return frame:IsMouseOver()
+    return frame:IsMouseOver() or (searchBox:IsShown() and searchBox:IsMouseOver())
 end
 
 local function ApplyFade()
     box:SetAlpha(fade)
     tabBar:SetAlpha(fade)
     controls:SetAlpha(fade)
+    searchBox:SetAlpha(fade)
     grip:SetAlpha(fade)
     thumb:SetAlpha(fade * 0.5)
     if db.fadeText then
@@ -295,6 +296,7 @@ local function CreateWindow()
     frame = CreateFrame("Frame", "JustANotepadFrame", UIParent)
     frame:SetFrameStrata("MEDIUM")
     frame:SetClampedToScreen(true)
+    frame:SetClampRectInsets(0, 0, 0, -HEADER) -- keeps room on screen for the search box under the window
     frame:SetMovable(true)
     frame:SetResizable(true)
     if frame.SetResizeBounds then
@@ -482,8 +484,6 @@ function UpdateControls()
     undo.rest = (#undoStack > 0) and 0.55 or 0.2
     if not undo:IsMouseOver() then undo.icon:SetAlpha(undo.rest) end
 
-    searchBox:ClearAllPoints()
-    searchBox:SetPoint("RIGHT", controls, count > 0 and "LEFT" or "RIGHT", -1, 0)
     LayoutTabs() -- the tabs get the room the controls leave
 end
 
@@ -519,7 +519,8 @@ local function CreateControls()
 end
 
 ------------------------------------------------------------------------
--- Search all pages: a small box in the header, left of the controls. Enter finds the next match; Escape closes it.
+-- Search all pages: a small box under the bottom-left corner of the window, shown only while searching.
+-- Enter finds the next match; Escape closes it.
 ------------------------------------------------------------------------
 
 function FindNext()
@@ -552,15 +553,15 @@ function SetSearchShown(shown)
     else
         searchBox:ClearFocus()
     end
-    LayoutTabs() -- the tabs make room for the search box
 end
 
 local function CreateSearch()
-    searchBox = CreateFrame("EditBox", nil, controls)
-    searchBox:SetSize(110, TAB_HEIGHT)
+    searchBox = CreateFrame("EditBox", nil, frame)
+    searchBox:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -1)
+    searchBox:SetSize(150, TAB_HEIGHT)
     searchBox:SetAutoFocus(false)
     searchBox:SetFontObject(GameFontHighlightSmall)
-    searchBox:SetTextInsets(4, 30, 0, 0)
+    searchBox:SetTextInsets(6, 34, 0, 0)
     searchBox:Hide()
     local back = searchBox:CreateTexture(nil, "BACKGROUND")
     back:SetAllPoints()
@@ -727,9 +728,8 @@ function LayoutTabs()
     local addWidth = 20
     local showAdd = count < MAX_PAGES
 
-    -- Room for the tabs: the header's width minus the controls (and the search box while it's open).
+    -- Room for the tabs: the header's width minus the controls.
     local reserved = controls:GetWidth() + 6
-    if searchBox:IsShown() then reserved = reserved + searchBox:GetWidth() + 2 end
     local available = (frame:GetWidth() or 320) - reserved - (showAdd and addWidth + 1 or 0) - count
 
     -- Each tab is as wide as its name; when they don't fit, they all shrink evenly.
@@ -981,7 +981,7 @@ end
 
 -- A click anywhere outside the notepad stops typing, so your keys go back to the game.
 local function ClearFocusIfClickedOutside()
-    if frame:IsShown() and not frame:IsMouseOver() then
+    if frame:IsShown() and not (frame:IsMouseOver() or (searchBox:IsShown() and searchBox:IsMouseOver())) then
         editBox:ClearFocus()
         searchBox:ClearFocus()
         renameBox:ClearFocus()
