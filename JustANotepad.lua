@@ -25,7 +25,8 @@ local DEFAULTS = {
     showEye = true,
     showClose = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
-    fadedBorderAlpha = 0.4, -- how visible the box's border stays when everything else fades (0 = gone)
+    keepBorder = false,     -- the box's border stays faintly visible when everything else fades
+    fadedBorderAlpha = 0.4, -- how visible it stays, with keepBorder on
     fadedTextAlpha = 0,     -- how visible the text stays when it fades (0 = gone)
     fontSize = 14,
     backgroundAlpha = 0.6,
@@ -137,7 +138,7 @@ local function LoadData()
         if db[key] == nil then db[key] = value end
     end
     -- Settings from earlier builds that are gone now.
-    db.tabSide, db.perCharacter, db.showLocation, db.keepBorder = nil, nil, nil, nil
+    db.tabSide, db.perCharacter, db.showLocation = nil, nil, nil
     if fresh then JustANotepadDB.pages[1] = WelcomePage() end
     PrepareList(JustANotepadDB.pages)
     for _, list in pairs(JustANotepadDB.characterPages) do PrepareList(list) end
@@ -286,7 +287,7 @@ end
 
 local function ApplyFade()
     box:SetAlpha(fade)
-    local border = db.fadedBorderAlpha or 0
+    local border = db.keepBorder and db.fadedBorderAlpha or 0
     outline:SetAlpha(border + (1 - border) * fade)
     tabBar:SetAlpha(fade)
     controls:SetAlpha(fade)
@@ -320,7 +321,7 @@ local function ApplyLook()
     box:SetBackdropColor(0, 0, 0, db.backgroundAlpha)
     -- When the border stays on while faded, it has to be solid enough to still show at a fraction of itself.
     local edge = math.min(1, db.backgroundAlpha + 0.3)
-    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, (db.fadedBorderAlpha or 0) > 0 and math.max(0.8, edge) or edge)
+    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, db.keepBorder and math.max(0.8, edge) or edge)
     RenderPage() -- the text size
     ApplyFade()
     LayoutTabs()
@@ -1641,9 +1642,11 @@ local function RegisterOptions()
     Checkbox("fadeText", "Fade the Text Too",
         "When the notepad isn't hovered or focused, the text fades with everything else. Same as the eye control.",
         function() UpdateControls() ApplyFade() end)
+    Checkbox("keepBorder", "Keep the Border When Faded",
+        "When the notepad fades, the box's border stays faintly visible so you can see where it is and how big it is.",
+        ApplyLook)
     Slider("fadedBorderAlpha", "Faded Border Visibility",
-        "How visible the box's border stays when the notepad fades, so you can see where it is and how big it is. "
-        .. "0% hides it completely.", 0, 1, 0.05, Percent, ApplyLook)
+        "How visible the border stays with Keep the Border When Faded on.", 0.05, 1, 0.05, Percent, ApplyLook)
     Slider("fadedTextAlpha", "Faded Text Visibility",
         "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent, ApplyFade)
     Slider("backgroundAlpha", "Background", "How solid the box behind the text is.", 0, 1, 0.05, Percent, ApplyLook)

@@ -8,7 +8,7 @@
 - Page tabs in a thin row above the text box, with small controls (undo, add a to-do, eye, close) at the right end of the same row.
 - The search icon sits under the bottom-left corner of the window; its box pops out to the right of it.
 - Each control can be hidden in the settings.
-- A faint border stays around the box when the notepad fades; a slider sets how visible it is, down to none.
+- Option to keep the box's border faintly visible when the notepad fades, with a slider for how visible.
 - Two kinds of page side by side: for all characters, or for one character only (tinted tabs).
 - To-do lines anywhere in a page: a checkbox that strikes the line through, and a delete circle on hover. Long to-dos wrap under their own indent.
 - Left-click + adds a page for all characters, right-click + adds one for this character; a tab's menu converts between the two.
