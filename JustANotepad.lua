@@ -25,6 +25,7 @@ local DEFAULTS = {
     showEye = true,
     showClose = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
+    keepBorder = false,     -- a faint outline of the box stays when everything else fades
     fadedTextAlpha = 0,     -- how visible the text stays when it fades (0 = gone)
     fontSize = 14,
     backgroundAlpha = 0.6,
@@ -45,6 +46,7 @@ local MAX_UNDO = 30
 local TYPING_PAUSE = 2      -- seconds without typing before a new undo step starts
 local FADE_TIME = 0.2       -- seconds to fade in or out
 local HOLD_TIME = 0.5        -- seconds a movement key is held before it counts as trying to move
+local FAINT_BORDER = 0.3     -- how much of the border stays with Keep a Faint Border on
 local FADE_DELAY = 0.6      -- seconds after the mouse leaves before fading out
 local PAD = 8               -- the margin around the text; dragging it moves the window
 local CONTROL_SIZE = 14
@@ -55,7 +57,7 @@ local TODO_INDENT = 34      -- checkbox, then the delete circle, then the to-do'
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local db
-local frame, box, scrollFrame, content, thumb, grip, measure
+local frame, box, outline, scrollFrame, content, thumb, grip, measure
 local controls, controlButtons, searchBar, searchBox, searchResult
 local tabBar, tabs, addTab, renameBox = nil, {}, nil, nil
 local category
@@ -285,6 +287,7 @@ end
 
 local function ApplyFade()
     box:SetAlpha(fade)
+    outline:SetAlpha(db.keepBorder and (FAINT_BORDER + (1 - FAINT_BORDER) * fade) or fade)
     tabBar:SetAlpha(fade)
     controls:SetAlpha(fade)
     searchBar:SetAlpha(fade)
@@ -315,7 +318,9 @@ end
 
 local function ApplyLook()
     box:SetBackdropColor(0, 0, 0, db.backgroundAlpha)
-    box:SetBackdropBorderColor(0.35, 0.35, 0.35, math.min(1, db.backgroundAlpha + 0.3))
+    -- With the faint border kept, it has to be solid enough to still show at a fraction of itself.
+    local edge = math.min(1, db.backgroundAlpha + 0.3)
+    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, db.keepBorder and math.max(0.8, edge) or edge)
     RenderPage() -- the text size
     ApplyFade()
     LayoutTabs()
@@ -393,7 +398,11 @@ local function CreateWindow()
     box = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
     box:SetPoint("TOPLEFT", 0, -HEADER)
     box:SetPoint("BOTTOMRIGHT", 0, 0)
-    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    box:SetBackdrop({ bgFile = WHITE })
+    -- The border is its own frame, so it can stay faintly visible when the background has faded out.
+    outline = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    outline:SetAllPoints(box)
+    outline:SetBackdrop({ edgeFile = WHITE, edgeSize = 1 })
 
     -- The margin around the text and the empty part of the header move the window.
     frame:SetScript("OnMouseDown", function(_, button)
@@ -1632,6 +1641,9 @@ local function RegisterOptions()
     Checkbox("fadeText", "Fade the Text Too",
         "When the notepad isn't hovered or focused, the text fades with everything else. Same as the eye control.",
         function() UpdateControls() ApplyFade() end)
+    Checkbox("keepBorder", "Keep a Faint Border",
+        "When the notepad fades, a faint outline of the box stays so you can see where it is and how big it is.",
+        ApplyLook)
     Slider("fadedTextAlpha", "Faded Text Visibility",
         "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent, ApplyFade)
     Slider("backgroundAlpha", "Background", "How solid the box behind the text is.", 0, 1, 0.05, Percent, ApplyLook)
