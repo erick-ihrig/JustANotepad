@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New pages are numbered with the lowest number not already in use, so renaming page 1 and adding a page gives a new 1. All-character pages and character pages are numbered separately.
+
 ## 1.0.1
 
 - Fixed: the text and cursor in to-do lines didn't show (typing and ticking still worked). This also affected text converted into to-dos.

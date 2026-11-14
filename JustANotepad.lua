@@ -1297,7 +1297,13 @@ local function AddPage(scope)
         return
     end
     local list = scope == "character" and CharacterList(true) or JustANotepadDB.pages
-    local page = NewPage(tostring(#list + 1)) -- new pages are just numbered
+    -- New pages are numbered with the lowest number no page of the same kind is using, so after "1" is renamed,
+    -- the next new page is "1" again. All-character pages and this character's pages are counted separately.
+    local used = {}
+    for _, other in ipairs(list) do used[other.title] = true end
+    local number = 1
+    while used[tostring(number)] do number = number + 1 end
+    local page = NewPage(tostring(number))
     list[#list + 1] = page
     ShowPage(IndexOf(page))
 end
