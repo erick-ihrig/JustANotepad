@@ -5,6 +5,7 @@
 ## Version: 0.1.0
 ## X-Website: https://github.com/erick-ihrig/JustANotepad
 ## X-License: MIT
+## X-Curse-Project-ID: 1804445
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
 ## SavedVariables: JustANotepadDB
 ## AddonCompartmentFunc: JustANotepad_OnAddonCompartmentClick

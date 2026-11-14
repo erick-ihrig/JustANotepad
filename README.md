@@ -1,38 +1,24 @@
 # Just a Notepad
 
-A minimal notepad for World of Warcraft: Forever. A movable, resizable text box with named page tabs that saves
-as you type and fades into the background when you're not using it.
+A minimal notepad for World of Warcraft: Forever. It's a text box that floats over your UI; when you're not using it, everything fades away except your text.
 
-## What it does
+## Features
 
-- **Floats over your UI.** When the notepad isn't hovered or focused, the box, tabs and controls fade away and
-  only your text is left. The eye control lets the text fade as well. An option keeps the border faintly
-  visible so you can still see where the box is, with a slider for how visible.
-- **Catches movement keys.** Hold a movement key while typing and the notepad stops typing and takes the held
-  letters back (along with anything they replaced), so nothing is lost. The game doesn't let an addon start
-  movement, so release the key and press it again to move.
-- **Stays open.** Escape only stops typing. The notepad closes only from its close control, `/note`, the keybind
-  or a launcher, and it reopens at login if it was open when you logged out.
-- **Pages.** Named tabs in a thin row above the text. A page is either for all your characters or for one
-  character only (those tabs are tinted in the class color). Left-click + for an all-characters page, right-click
-  + for a character page. Right-click a tab to rename, move, convert or delete it.
-- **To-do lines.** Add a to-do anywhere in a page (the checkmark control, or Ctrl+T). Tick its box to strike it
-  through; hover it and click the red circle to delete it. Long to-dos wrap, indented under their first line.
-  Highlight some text and right-click it to convert it into to-dos, one per line. Enter adds another to-do; Enter on an empty one goes
-  back to ordinary text.
-- **Small controls.** In line with the tabs: undo (Ctrl+Z), add a to-do (Ctrl+T), the eye and close. Under the
-  bottom-left corner: search all pages (Ctrl+F), with a box that pops out beside the icon. Each control can be
-  hidden in the settings.
-- **Welcome page.** A new install opens with a short page explaining all of this. `/note welcome` adds it again.
-- **Moving and resizing.** Drag a tab, the edge of the box or any empty space in it to move it; drag the
-  bottom-right corner to resize it. Lock Window in the settings stops both.
+- **Fades out of the way.** When the notepad isn't hovered or focused, the box, tabs and buttons fade out and only your text is left. Turn on the eye button and the text fades too.
+- **Pages for everyone or for one character.** Left-click **+** for a page all your characters see, right-click **+** for a page only this character sees. Right-click a tab to rename, move, convert or delete it.
+- **To-do lines anywhere in a note.** Add one with the checkmark button or Ctrl+T. Highlight text and right-click it to convert it into to-dos.
+- **Saves as you type,** with undo (Ctrl+Z) and search across all pages (Ctrl+F).
+- **Catches movement keys.** Hold a movement key while typing and the notepad stops typing and takes the stray letters back, so nothing you wrote is lost. Press the key again to move.
+- **Out of the way when you want it.** Drag it by a tab, its edge or any empty space; resize it from the corner; lock it in place. Choose which buttons show, the text size and the background opacity.
 
-## Commands
+## Getting started
+
+Type `/note` to open or close the notepad. A new install opens with a short welcome page explaining the basics.
 
 | Command | What it does |
 | --- | --- |
 | `/note` | Open or close the notepad |
-| `/note settings` | Open the settings page |
+| `/note settings` | Open the settings |
 | `/note reset` | Put the window back at its default position and size |
 | `/note size 8-28` | Text size |
 | `/note bg 0-100` | Background opacity |
@@ -40,8 +26,12 @@ as you type and fades into the background when you're not using it.
 
 A keybind is under Key Bindings > AddOns > Just a Notepad.
 
+## Download and feedback
+
+Download on CurseForge: https://www.curseforge.com/projects/1804445
+
+Report issues or suggest features: https://github.com/erick-ihrig/JustANotepad/issues
+
 ## Credits
 
-Made by Erick Ihrig. Built with AI assistance (Claude, by Anthropic).
-
-Licensed under the MIT License.
+Made by Erick Ihrig. Built with AI assistance (Claude, by Anthropic). MIT licensed.
