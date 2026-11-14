@@ -818,6 +818,33 @@ local function ConvertSelection(widget, start, length)
     RenderPage()
 end
 
+-- The latest highlight in a text block, noted when the selecting ends (mouse up, Shift+arrows, Ctrl+A). The
+-- right-click that opens the menu can clear the highlight before the addon sees it, so the menu goes by this.
+local selection -- { widget, text, start, length }
+local menuAt = 0
+
+local function RememberSelection(edit)
+    if selection and selection.widget == edit then selection = nil end
+    if not edit.block or edit.block.todo or not edit:HasFocus() then return end
+    local start, length = GetSelection(edit)
+    if start then selection = { widget = edit, text = edit.block.text, start = start, length = length } end
+end
+
+local function ShowConvertMenu(edit)
+    if GetTime() - menuAt < 0.3 or not edit.block or edit.block.todo then return end
+    local picked = selection
+    if not (picked and picked.widget == edit and picked.text == edit.block.text) then
+        RememberSelection(edit) -- the highlight may still be there
+        picked = selection
+        if not (picked and picked.widget == edit) then return end
+    end
+    menuAt = GetTime()
+    edit:HighlightText(picked.start, picked.start + picked.length) -- shows what will be converted
+    OpenMenu(edit, function(_, root)
+        root:CreateButton("Convert into to-do", function() ConvertSelection(edit, picked.start, picked.length) end)
+    end)
+end
+
 local enterAt = 0 -- when Enter was last handled in a to-do, so one key press isn't handled twice
 
 local function SetUpEdit(edit, widget)
@@ -864,6 +891,7 @@ local function SetUpEdit(edit, widget)
     end)
     edit:SetScript("OnEditFocusLost", function(self)
         if focused == widget then focused = nil end
+        if selection and selection.widget == self and GetTime() - menuAt > 0.3 then selection = nil end
         self:HighlightText(0, 0) -- clicking away (or Escape) also drops any selection
     end)
     edit:SetScript("OnChar", function(_, char)
@@ -894,12 +922,14 @@ local function CreateTextBlock()
     edit:SetScript("OnSizeChanged", Relayout)
     -- Right-click with text highlighted: a menu to turn it into to-dos.
     edit:SetScript("OnMouseUp", function(self, button)
-        if button ~= "RightButton" or not self.block then return end
-        local start, length = GetSelection(self)
-        if not start then return end
-        OpenMenu(self, function(_, root)
-            root:CreateButton("Convert into to-do", function() ConvertSelection(self, start, length) end)
-        end)
+        if button == "RightButton" then
+            ShowConvertMenu(self)
+        else
+            C_Timer.After(0, function() RememberSelection(self) end) -- once the click or drag has settled
+        end
+    end)
+    edit:SetScript("OnKeyUp", function(self, key)
+        if IsShiftKeyDown() or (IsControlKeyDown() and key == "A") then RememberSelection(self) end
     end)
     return edit
 end
@@ -1717,7 +1747,8 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("GLOBAL_MOUSE_DOWN")
-events:SetScript("OnEvent", function(_, event)
+events:RegisterEvent("GLOBAL_MOUSE_UP")
+events:SetScript("OnEvent", function(_, event, button)
     if event == "PLAYER_LOGIN" then
         LoadData()
         local wasOpen = db.open
@@ -1734,6 +1765,10 @@ events:SetScript("OnEvent", function(_, event)
         UpdateMinimapButton()
         if db.reopenAtLogin and wasOpen then frame:Show() end
         db.open = frame:IsShown()
+    elseif event == "GLOBAL_MOUSE_UP" and frame and button == "RightButton" and frame:IsShown() then
+        for _, widget in ipairs(active) do
+            if not widget.isTodo and widget:IsMouseOver() then ShowConvertMenu(widget) end
+        end
     elseif event == "GLOBAL_MOUSE_DOWN" and frame then
         C_Timer.After(0, ClearFocusIfClickedOutside) -- next frame, once the click has landed
     end
