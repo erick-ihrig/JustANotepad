@@ -526,17 +526,36 @@ function FocusBlock(block, cursor)
     widget.edit:SetCursorPosition(cursor or 0)
 end
 
+-- The height of one line of note text, measured from the font. A text box shorter than this shows no text and
+-- no cursor at all (though it still takes clicks and typing), so boxes are never made shorter.
+local function LineHeight()
+    if not fontFile then
+        local _
+        fontFile, _, fontFlags = ChatFontNormal:GetFont()
+    end
+    measure:SetFont(fontFile, db.fontSize, fontFlags)
+    measure:SetText("Ag")
+    local height = measure:GetStringHeight() or 0
+    if height < db.fontSize then height = db.fontSize * 1.25 end
+    return math.ceil(height)
+end
+
 -- Keeps the page's height (and so the scroll range) in step with its blocks.
 local sizing = false
 local function Relayout()
     if sizing then return end
     sizing = true
     local total = 0
+    local lineHeight = LineHeight()
     for index, widget in ipairs(active) do
-        -- An empty block still needs a line to click on and type in. A to-do row is as tall as its (wrapped) text.
+        -- An empty text block still needs a full line to click on and type in. A to-do row is as tall as its box,
+        -- which UpdateTodoLook sizes to the wrapped text.
         local edit = widget.edit
-        if (edit:GetHeight() or 0) < db.fontSize then edit:SetHeight(db.fontSize + 2) end
-        if widget.isTodo then widget:SetHeight(edit:GetHeight()) end
+        if widget.isTodo then
+            widget:SetHeight(edit:GetHeight() or 0)
+        elseif (edit:GetHeight() or 0) < lineHeight then
+            edit:SetHeight(lineHeight + 2)
+        end
         total = total + (widget:GetHeight() or 0) + (index > 1 and BLOCK_GAP or 0)
     end
     content:SetHeight(math.max(1, total))
@@ -564,20 +583,22 @@ local function LineWidths(text, maxWidth)
     return widths
 end
 
--- Ticked to-dos are grey with a line through each line of their text.
+-- Sizes a to-do's box to its wrapped text (the game doesn't do it for these boxes, and one shorter than a line
+-- shows nothing), and greys ticked to-dos with a line through each line of their text.
+local TODO_PAD = 2 -- above and below the text in a to-do's box
+
 local function UpdateTodoLook(row)
     local block = row.block
     if not block then return end
     row.mark:SetShown(block.done and true or false)
     local shade = block.done and 0.5 or 1
     row.edit:SetTextColor(shade, shade, shade)
-    local widths = {}
-    if block.done and block.text ~= "" then
-        measure:SetFont(fontFile, db.fontSize, fontFlags)
-        widths = LineWidths(block.text, row.textWidth or 100)
-    end
-    local height = row.edit:GetHeight() or 0
-    local lineHeight = (#widths > 0 and height >= db.fontSize) and height / #widths or db.fontSize + 2
+    local lineHeight = LineHeight() -- also sets the measuring font for LineWidths
+    local widths = block.text ~= "" and LineWidths(block.text, row.textWidth or 100) or {}
+    local height = math.max(1, #widths) * lineHeight + TODO_PAD * 2
+    if math.abs((row.edit:GetHeight() or 0) - height) > 0.5 then row.edit:SetHeight(height) end
+    row.edit:SetTextInsets(0, 0, TODO_PAD, TODO_PAD)
+    if not block.done then widths = {} end
     for index, width in ipairs(widths) do
         local strike = row.strikes[index]
         if not strike then
@@ -587,7 +608,7 @@ local function UpdateTodoLook(row)
             row.strikes[index] = strike
         end
         strike:ClearAllPoints()
-        strike:SetPoint("TOPLEFT", 0, -math.floor((index - 0.5) * lineHeight))
+        strike:SetPoint("TOPLEFT", 0, -math.floor(TODO_PAD + (index - 0.5) * lineHeight))
         strike:SetWidth(math.max(1, width))
         strike:Show()
     end
@@ -1023,7 +1044,7 @@ function RenderPage()
             widget.textWidth = width - TODO_INDENT
             widget.edit:SetWidth(widget.textWidth)
             widget.check:ClearAllPoints()
-            widget.check:SetPoint("TOPLEFT", 1, -math.max(0, math.floor((db.fontSize - 11) / 2)))
+            widget.check:SetPoint("TOPLEFT", 1, -math.max(0, math.floor(2 + (LineHeight() - 13) / 2)))
         else
             widget = table.remove(textPool) or CreateTextBlock()
         end

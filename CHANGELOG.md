@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: the text and cursor in to-do lines didn't show (typing and ticking still worked). This also affected text converted into to-dos.
+
 ## 1.0.0
 
 First public release.
