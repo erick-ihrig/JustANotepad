@@ -25,7 +25,7 @@ local DEFAULTS = {
     showEye = true,
     showClose = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
-    keepBorder = false,     -- a faint outline of the box stays when everything else fades
+    fadedBorderAlpha = 0.4, -- how visible the box's border stays when everything else fades (0 = gone)
     fadedTextAlpha = 0,     -- how visible the text stays when it fades (0 = gone)
     fontSize = 14,
     backgroundAlpha = 0.6,
@@ -46,7 +46,6 @@ local MAX_UNDO = 30
 local TYPING_PAUSE = 2      -- seconds without typing before a new undo step starts
 local FADE_TIME = 0.2       -- seconds to fade in or out
 local HOLD_TIME = 0.5        -- seconds a movement key is held before it counts as trying to move
-local FAINT_BORDER = 0.3     -- how much of the border stays with Keep a Faint Border on
 local FADE_DELAY = 0.6      -- seconds after the mouse leaves before fading out
 local PAD = 8               -- the margin around the text; dragging it moves the window
 local CONTROL_SIZE = 14
@@ -138,7 +137,7 @@ local function LoadData()
         if db[key] == nil then db[key] = value end
     end
     -- Settings from earlier builds that are gone now.
-    db.tabSide, db.perCharacter, db.showLocation = nil, nil, nil
+    db.tabSide, db.perCharacter, db.showLocation, db.keepBorder = nil, nil, nil, nil
     if fresh then JustANotepadDB.pages[1] = WelcomePage() end
     PrepareList(JustANotepadDB.pages)
     for _, list in pairs(JustANotepadDB.characterPages) do PrepareList(list) end
@@ -163,7 +162,7 @@ end
 -- Each entry is { page, list (the saved list the page is in), scope ("account" or "character") }.
 local function AllPages()
     local account, character = JustANotepadDB.pages, CharacterList()
-    if #account == 0 and not (character and #character > 0) then account[1] = NewPage("Page 1") end
+    if #account == 0 and not (character and #character > 0) then account[1] = NewPage("1") end
     local all = {}
     for _, page in ipairs(account) do all[#all + 1] = { page = page, list = account, scope = "account" } end
     for _, page in ipairs(character or {}) do all[#all + 1] = { page = page, list = character, scope = "character" } end
@@ -287,7 +286,8 @@ end
 
 local function ApplyFade()
     box:SetAlpha(fade)
-    outline:SetAlpha(db.keepBorder and (FAINT_BORDER + (1 - FAINT_BORDER) * fade) or fade)
+    local border = db.fadedBorderAlpha or 0
+    outline:SetAlpha(border + (1 - border) * fade)
     tabBar:SetAlpha(fade)
     controls:SetAlpha(fade)
     searchBar:SetAlpha(fade)
@@ -318,9 +318,9 @@ end
 
 local function ApplyLook()
     box:SetBackdropColor(0, 0, 0, db.backgroundAlpha)
-    -- With the faint border kept, it has to be solid enough to still show at a fraction of itself.
+    -- When the border stays on while faded, it has to be solid enough to still show at a fraction of itself.
     local edge = math.min(1, db.backgroundAlpha + 0.3)
-    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, db.keepBorder and math.max(0.8, edge) or edge)
+    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, (db.fadedBorderAlpha or 0) > 0 and math.max(0.8, edge) or edge)
     RenderPage() -- the text size
     ApplyFade()
     LayoutTabs()
@@ -1241,7 +1241,7 @@ local function AddPage(scope)
         return
     end
     local list = scope == "character" and CharacterList(true) or JustANotepadDB.pages
-    local page = NewPage("Page " .. (#list + 1))
+    local page = NewPage(tostring(#list + 1)) -- new pages are just numbered
     list[#list + 1] = page
     ShowPage(IndexOf(page))
 end
@@ -1641,9 +1641,9 @@ local function RegisterOptions()
     Checkbox("fadeText", "Fade the Text Too",
         "When the notepad isn't hovered or focused, the text fades with everything else. Same as the eye control.",
         function() UpdateControls() ApplyFade() end)
-    Checkbox("keepBorder", "Keep a Faint Border",
-        "When the notepad fades, a faint outline of the box stays so you can see where it is and how big it is.",
-        ApplyLook)
+    Slider("fadedBorderAlpha", "Faded Border Visibility",
+        "How visible the box's border stays when the notepad fades, so you can see where it is and how big it is. "
+        .. "0% hides it completely.", 0, 1, 0.05, Percent, ApplyLook)
     Slider("fadedTextAlpha", "Faded Text Visibility",
         "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent, ApplyFade)
     Slider("backgroundAlpha", "Background", "How solid the box behind the text is.", 0, 1, 0.05, Percent, ApplyLook)

@@ -6,8 +6,8 @@ as you type and fades into the background when you're not using it.
 ## What it does
 
 - **Floats over your UI.** When the notepad isn't hovered or focused, the box, tabs and controls fade away and
-  only your text is left. The eye control lets the text fade as well. An option keeps a faint border so you can still
-  see where the box is.
+  only your text is left. The eye control lets the text fade as well. A faint border stays so you can still see
+  where the box is; a slider in the settings sets how visible it is, down to none.
 - **Catches movement keys.** Hold a movement key while typing and the notepad stops typing and takes the held
   letters back (along with anything they replaced), so nothing is lost. The game doesn't let an addon start
   movement, so release the key and press it again to move.
