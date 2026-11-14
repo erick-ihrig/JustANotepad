@@ -84,13 +84,17 @@ local function WelcomePage()
         { todo = true, text = "Tick this box to mark a to-do as done" },
         { todo = true, text = "Hover a to-do and click the red circle to delete it" },
         { todo = true, text = "Add your own with the checkmark button above, or Ctrl+T" },
-        { text = "Pages: left-click + to add a page for all your characters, or right-click + for a page only this "
+        { todo = true, text = "Highlight some lines of text, right-click them and choose Convert into to-do" },
+        { text = "Undo: the arrow button above, or Ctrl+Z.\n\n"
+            .. "Pages: left-click + to add a page for all your characters, or right-click + for a page only this "
             .. "character sees. Right-click a tab to rename, move, convert or delete it.\n\n"
             .. "Search: the magnifier under the bottom-left corner, or Ctrl+F.\n\n"
             .. "Fading: move the mouse away and click somewhere else, and everything but the text fades out. "
             .. "The eye button makes the text fade too.\n\n"
-            .. "Moving: drag a tab, the edge of the box or any empty space in it. Resize from the bottom-right "
-            .. "corner.\n\n"
+            .. "Moving your character: if you hold a movement key (like W) while typing, the notepad stops typing "
+            .. "and removes the letters it typed. Press the key again to move.\n\n"
+            .. "Moving the notepad: drag a tab, the edge of the box or any empty space in it. Resize from the "
+            .. "bottom-right corner.\n\n"
             .. "Settings: type /note settings to choose which buttons show, the text size, the background and more. "
             .. "/note opens and closes the notepad. Escape only stops typing; it never closes it." },
     } }
