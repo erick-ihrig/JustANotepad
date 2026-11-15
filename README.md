@@ -9,7 +9,7 @@ A minimal notepad for World of Warcraft: Forever. It's a text box that floats ov
 - **To-do lines anywhere in a note.** Add one with the checkmark button or Ctrl+T. Highlight text and right-click it to convert it into to-dos.
 - **Saves as you type,** with undo (Ctrl+Z) and search across all pages (Ctrl+F).
 - **Catches movement keys.** Hold a movement key while typing and the notepad stops typing and takes the stray letters back, so nothing you wrote is lost. Press the key again to move.
-- **Out of the way when you want it.** Drag it by a tab, its edge or any empty space; resize it from the corner; lock it in place. Choose which buttons show, the text size and the background opacity.
+- **Out of the way when you want it.** Drag it by a tab, its edge or any empty space; resize it from the corner; lock it in place. Choose which buttons show, the text size, the background opacity and a monospace font.
 
 ## Getting started
 
@@ -22,6 +22,7 @@ Type `/note` to open or close the notepad. A new install opens with a short welc
 | `/note reset` | Put the window back at its default position and size |
 | `/note size 8-28` | Text size |
 | `/note bg 0-100` | Background opacity |
+| `/note mono` | Monospace font on or off |
 | `/note welcome` | Add the welcome page again |
 
 A keybind is under Key Bindings > AddOns > Just a Notepad.
@@ -35,3 +36,5 @@ Report issues or suggest features: https://github.com/erick-ihrig/JustANotepad/i
 ## Credits
 
 Made by Erick Ihrig. Built with AI assistance (Claude, by Anthropic). MIT licensed.
+
+The monospace font is DejaVu Sans Mono, included unmodified under its own license (`Fonts/LICENSE-DejaVu.txt`).

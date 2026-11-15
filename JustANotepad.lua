@@ -11,7 +11,7 @@
 -- To-dos can sit anywhere between text; a page always ends with a text block, and two text blocks are never
 -- neighbours (they're merged).
 --
--- Commands: /note (toggle), /note settings, /note reset, /note size N, /note bg N, /note welcome
+-- Commands: /note (toggle), /note settings, /note reset, /note size N, /note bg N, /note mono, /note welcome
 -- Keybind: Key Bindings > AddOns > Just a Notepad.
 -- Sections, in order: data and pages, undo, window and fading, page content (text and to-do blocks), controls,
 -- search, tabs, launchers, settings, commands and events.
@@ -28,6 +28,7 @@ local DEFAULTS = {
     keepBorder = false,     -- the box's border stays faintly visible when everything else fades
     fadedBorderAlpha = 0.4, -- how visible it stays, with keepBorder on
     fadedTextAlpha = 0,     -- how visible the text stays when it fades (0 = gone)
+    monoFont = false,       -- note text in a monospace font, so columns and spacing line up
     fontSize = 14,
     backgroundAlpha = 0.6,
     lock = false,
@@ -55,6 +56,8 @@ local HEADER = TAB_HEIGHT + 1   -- the row of tabs and controls above the text b
 local BLOCK_GAP = 2         -- between a to-do line and its neighbours
 local TODO_INDENT = 34      -- checkbox, then the delete circle, then the to-do's text
 local WHITE = "Interface\\Buttons\\WHITE8x8"
+-- Bundled with the addon (DejaVu Sans Mono; license in Fonts/LICENSE-DejaVu.txt). The game has no monospace font.
+local MONO_FONT = "Interface\\AddOns\\JustANotepad\\Fonts\\DejaVuSansMono.ttf"
 
 local db
 local frame, box, outline, scrollFrame, content, thumb, grip, measure
@@ -528,11 +531,25 @@ end
 
 -- The height of one line of note text, measured from the font. A text box shorter than this shows no text and
 -- no cursor at all (though it still takes clicks and typing), so boxes are never made shorter.
-local function LineHeight()
-    if not fontFile then
-        local _
-        fontFile, _, fontFlags = ChatFontNormal:GetFont()
+-- The note font: the chat font, or the bundled monospace one. If the game can't load the monospace file, the
+-- chat font is used and a message says so once.
+local monoFailed = false
+local function PickFont()
+    local _
+    fontFile, _, fontFlags = ChatFontNormal:GetFont()
+    if not db.monoFont or monoFailed then return end
+    measure:SetFont(MONO_FONT, db.fontSize, fontFlags)
+    local loaded = measure:GetFont()
+    if loaded and loaded:lower():find("dejavusansmono", 1, true) then
+        fontFile = MONO_FONT
+    else
+        monoFailed = true
+        Print("The monospace font couldn't be loaded, so the normal font is used. Reinstalling the addon may fix it.")
     end
+end
+
+local function LineHeight()
+    if not fontFile then PickFont() end
     measure:SetFont(fontFile, db.fontSize, fontFlags)
     measure:SetText("Ag")
     local height = measure:GetStringHeight() or 0
@@ -1032,8 +1049,7 @@ function RenderPage()
     active = {}
     searchWidget = nil
 
-    local _
-    fontFile, _, fontFlags = ChatFontNormal:GetFont()
+    PickFont()
     local width = math.max(40, scrollFrame:GetWidth() or 200)
     content:SetWidth(width)
     local above
@@ -1713,6 +1729,9 @@ local function RegisterOptions()
     Slider("backgroundAlpha", "Background", "How solid the box behind the text is.", 0, 1, 0.05, Percent, ApplyLook)
     Slider("fontSize", "Text Size", "The size of the note text.", 8, 28, 1, function(value) return tostring(value) end,
         ApplyLook)
+    Checkbox("monoFont", "Monospace Font",
+        "Every character takes the same width, so columns, lists and spacing line up. Uses DejaVu Sans Mono.",
+        ApplyLook)
 
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized.")
@@ -1751,6 +1770,10 @@ SlashCmdList.JUSTANOTEPAD = function(message)
     elseif command == "bg" and tonumber(value) then
         db.backgroundAlpha = math.max(0, math.min(100, tonumber(value))) / 100
         ApplyLook()
+    elseif command == "mono" then
+        db.monoFont = not db.monoFont
+        ApplyLook()
+        Print("Monospace font " .. (db.monoFont and "on" or "off") .. ".")
     elseif command == "welcome" then
         if #AllPages() >= MAX_PAGES then
             Print("That's the most pages (" .. MAX_PAGES .. "). Delete one to see the welcome page again.")
@@ -1762,7 +1785,7 @@ SlashCmdList.JUSTANOTEPAD = function(message)
         ShowPage(IndexOf(page))
     else
         Print("/note opens or closes it. Also: /note settings, /note reset (position and size), "
-            .. "/note size 8-28, /note bg 0-100, /note welcome (adds the welcome page again)")
+            .. "/note size 8-28, /note bg 0-100, /note mono (monospace font on/off), /note welcome (adds the welcome page again)")
     end
 end
 

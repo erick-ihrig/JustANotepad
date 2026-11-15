@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New Monospace Font option (Settings > Look, or `/note mono`): every character takes the same width, so columns, lists and spacing line up. Uses the bundled DejaVu Sans Mono.
 - New pages are numbered with the lowest number not already in use, so renaming page 1 and adding a page gives a new 1. All-character pages and character pages are numbered separately.
 
 ## 1.0.1
