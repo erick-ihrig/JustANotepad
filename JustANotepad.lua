@@ -531,21 +531,45 @@ end
 
 -- The height of one line of note text, measured from the font. A text box shorter than this shows no text and
 -- no cursor at all (though it still takes clicks and typing), so boxes are never made shorter.
--- The note font: the chat font, or the bundled monospace one. If the game can't load the monospace file, the
--- chat font is used and a message says so once.
+-- The note font: the chat font, or the bundled monospace one. Whether the monospace file really loaded is checked
+-- by its widths (narrow and wide letters take the same room), because the game reports the requested font even
+-- when it couldn't load the file. If it didn't load, the chat font is used and a message says so once.
 local monoFailed = false
+
+local function IsMonospace()
+    measure:SetText("iiiiiiiiii")
+    local narrow = measure:GetStringWidth() or 0
+    measure:SetText("MMMMMMMMMM")
+    local wide = measure:GetStringWidth() or 0
+    return narrow > 0 and math.abs(wide - narrow) <= wide * 0.05
+end
+
 local function PickFont()
     local _
     fontFile, _, fontFlags = ChatFontNormal:GetFont()
     if not db.monoFont or monoFailed then return end
     measure:SetFont(MONO_FONT, db.fontSize, fontFlags)
-    local loaded = measure:GetFont()
-    if loaded and loaded:lower():find("dejavusansmono", 1, true) then
+    if IsMonospace() then
         fontFile = MONO_FONT
     else
         monoFailed = true
-        Print("The monospace font couldn't be loaded, so the normal font is used. Reinstalling the addon may fix it.")
+        measure:SetFont(fontFile, db.fontSize, fontFlags)
+        Print("The monospace font didn't load, so the normal font is used. If the addon was installed or updated "
+            .. "while the game was running, restart the game (a /reload isn't enough), then turn the option on again.")
     end
+end
+
+-- Turning the option on (or off and on) tries the font file again.
+local function RetryMonoFont()
+    monoFailed = false
+end
+
+-- The cursor's height for each font and size, as the game reports it while typing. The cursor is a little taller
+-- than the letters, and a box too short for it doesn't draw it, so line heights are at least this.
+local cursorHeights = {}
+
+local function FontKey()
+    return tostring(fontFile) .. ":" .. db.fontSize
 end
 
 local function LineHeight()
@@ -554,6 +578,7 @@ local function LineHeight()
     measure:SetText("Ag")
     local height = measure:GetStringHeight() or 0
     if height < db.fontSize then height = db.fontSize * 1.25 end
+    height = math.max(height, cursorHeights[FontKey()] or 0)
     return math.ceil(height)
 end
 
@@ -924,6 +949,14 @@ local function SetUpEdit(edit, widget)
     end)
     -- Keeps the line being typed on (or a search match) in view (CheckCursor).
     edit:SetScript("OnCursorChanged", function(self, _, y, _, cursorHeight)
+        -- A taller cursor than the boxes were sized for: size them again (next frame) so it shows.
+        if fontFile and cursorHeight and cursorHeight > 0 then
+            local key = FontKey()
+            if cursorHeight > (cursorHeights[key] or 0) + 0.5 then
+                cursorHeights[key] = math.ceil(cursorHeight)
+                C_Timer.After(0, ResizeBlocks)
+            end
+        end
         if self ~= (focused and focused.edit) and self ~= searchWidget then return end
         cursorMoved = { widget = widget, y = y or 0, height = cursorHeight or 0 }
     end)
@@ -1095,6 +1128,8 @@ function ResizeBlocks()
         if widget.isTodo then
             widget.textWidth = width - TODO_INDENT
             widget.edit:SetWidth(widget.textWidth)
+            widget.check:ClearAllPoints()
+            widget.check:SetPoint("TOPLEFT", 1, -math.max(0, math.floor(2 + (LineHeight() - 13) / 2)))
             UpdateTodoLook(widget)
         end
     end
@@ -1731,7 +1766,7 @@ local function RegisterOptions()
         ApplyLook)
     Checkbox("monoFont", "Monospace Font",
         "Every character takes the same width, so columns, lists and spacing line up. Uses DejaVu Sans Mono.",
-        ApplyLook)
+        function() RetryMonoFont() ApplyLook() end)
 
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized.")
@@ -1772,6 +1807,7 @@ SlashCmdList.JUSTANOTEPAD = function(message)
         ApplyLook()
     elseif command == "mono" then
         db.monoFont = not db.monoFont
+        RetryMonoFont()
         ApplyLook()
         Print("Monospace font " .. (db.monoFont and "on" or "off") .. ".")
     elseif command == "welcome" then
