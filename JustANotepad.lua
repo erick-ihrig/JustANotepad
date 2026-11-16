@@ -24,10 +24,9 @@ local DEFAULTS = {
     showTodo = true,
     showEye = true,
     showClose = true,
+    showSettings = true,
     showLock = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
-    keepBorder = false,     -- the box's border stays faintly visible when everything else fades
-    fadedBorderAlpha = 0.4, -- how visible it stays, with keepBorder on
     fadedTextAlpha = 0,     -- how visible the text stays when it fades (0 = gone)
     monoFont = false,       -- note text in a monospace font, so columns and spacing line up
     fontSize = 14,
@@ -151,6 +150,7 @@ local function LoadData()
     end
     -- Settings from earlier builds that are gone now.
     db.tabSide, db.perCharacter, db.showLocation = nil, nil, nil
+    db.keepBorder, db.fadedBorderAlpha = nil, nil -- the Keep the Border When Faded option was removed
     if fresh then JustANotepadDB.pages[1] = WelcomePage() end
     PrepareList(JustANotepadDB.pages)
     for _, list in pairs(JustANotepadDB.characterPages) do PrepareList(list) end
@@ -302,8 +302,7 @@ local function ApplyFade()
     -- While locked, hovering brings back only the lock control; everything else stays faded.
     local shown = db.lock and 0 or fade
     box:SetAlpha(shown)
-    local border = db.keepBorder and db.fadedBorderAlpha or 0
-    outline:SetAlpha(border + (1 - border) * shown)
+    outline:SetAlpha(shown)
     tabBar:SetAlpha(shown)
     controls:SetAlpha(shown)
     lockBar:SetAlpha(fade)
@@ -336,9 +335,7 @@ end
 
 local function ApplyLook()
     box:SetBackdropColor(0, 0, 0, db.backgroundAlpha)
-    -- When the border stays on while faded, it has to be solid enough to still show at a fraction of itself.
-    local edge = math.min(1, db.backgroundAlpha + 0.3)
-    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, db.keepBorder and math.max(0.8, edge) or edge)
+    outline:SetBackdropBorderColor(0.35, 0.35, 0.35, math.min(1, db.backgroundAlpha + 0.3))
     RenderPage() -- the text size
     ApplyFade()
     LayoutTabs()
@@ -393,7 +390,7 @@ local function UpdateThumb()
     thumb:Show()
 end
 
-local SetSearchShown, FindNext, AddTodo, ResizeBlocks, OpenMenu, SetLock -- defined further down
+local SetSearchShown, FindNext, AddTodo, ResizeBlocks, OpenMenu, SetLock, OpenSettings -- defined further down
 
 local function CreateWindow()
     frame = CreateFrame("Frame", "JustANotepadFrame", UIParent)
@@ -997,6 +994,7 @@ local function SetUpEdit(edit, widget)
     if edit.SetHyperlinksEnabled then
         edit:SetHyperlinksEnabled(true)
         edit:SetScript("OnHyperlinkClick", function(_, link, text, button)
+            if db.lock then return end
             if SetItemRef then SetItemRef(link, text, button, edit) end
         end)
     end
@@ -1166,7 +1164,7 @@ function RenderPage()
     PickFont()
     local width = math.max(40, scrollFrame:GetWidth() or 200)
     content:SetWidth(width)
-    local above
+    local above, reflow
     for _, block in ipairs(page.blocks) do
         local widget
         if block.todo then
@@ -1186,6 +1184,11 @@ function RenderPage()
             widget:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
         end
         widget:SetWidth(width)
+        local fontKey = fontFile .. db.fontSize
+        if widget.fontKey ~= fontKey then
+            widget.fontKey = fontKey
+            reflow = true
+        end
         widget.edit:SetFont(fontFile, db.fontSize, fontFlags)
         widget.edit:SetTextColor(1, 1, 1)
         widget:Show()
@@ -1198,6 +1201,14 @@ function RenderPage()
     snapshot = CopyBlocks(page.blocks)
     Relayout()
     if db.lock then ApplyLock() end -- new rows take clicks until the lock turns them off
+    -- A box that was drawn before in another font or size can keep its old line layout until its width changes,
+    -- so its width is nudged and put back (what resizing the window by hand did to fix it).
+    if reflow then
+        C_Timer.After(0, function()
+            for _, widget in ipairs(active) do widget.edit:SetWidth((widget.edit:GetWidth() or 100) - 1) end
+            C_Timer.After(0, ResizeBlocks)
+        end)
+    end
 end
 
 -- The window was resized: the blocks follow its width.
@@ -1223,7 +1234,7 @@ end
 -- The search icon sits on its own under the bottom-left corner of the window.
 ------------------------------------------------------------------------
 
-local CONTROL_ORDER = { "Close", "Eye", "Todo", "Undo" } -- right to left (the lock sits left of the tabs)
+local CONTROL_ORDER = { "Close", "Settings", "Eye", "Todo", "Undo" } -- right to left (the lock sits left of the tabs)
 local LOCK_ICON = "Interface\\PetBattles\\PetBattle-LockIcon"
 
 local function CreateControl(texture, tooltip, onClick, parent)
@@ -1324,6 +1335,9 @@ local function CreateControls()
         Close = CreateControl("Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Close (/note opens it again)", function()
             frame:Hide()
         end),
+        Settings = CreateControl("Interface\\Buttons\\UI-OptionsButton", "Settings (/note settings)", function()
+            OpenSettings()
+        end),
         Eye = CreateControl("Interface\\Icons\\INV_Misc_Eye_01", function()
             if db.fadeText then return "Text fades with the notepad. Click to keep it visible." end
             return "Text stays visible when the notepad fades. Click to let it fade too."
@@ -1366,10 +1380,13 @@ local function TurnOffMouse(parent, keepCheckboxes)
             if not turnedOff[child] then
                 local mouse = child:IsMouseEnabled()
                 local wheel = child.IsMouseWheelEnabled and child:IsMouseWheelEnabled()
-                if mouse or wheel then
-                    turnedOff[child] = { mouse = mouse, wheel = wheel }
+                -- Links in the text take clicks on their own, apart from the box's mouse setting.
+                local links = child.GetHyperlinksEnabled and child:GetHyperlinksEnabled()
+                if mouse or wheel or links then
+                    turnedOff[child] = { mouse = mouse, wheel = wheel, links = links }
                     if mouse then child:EnableMouse(false) end
                     if wheel then child:EnableMouseWheel(false) end
+                    if links then child:SetHyperlinksEnabled(false) end
                 end
             end
             TurnOffMouse(child, keepCheckboxes)
@@ -1381,6 +1398,7 @@ local function GiveMouseBack()
     for child, state in pairs(turnedOff) do
         if state.mouse then child:EnableMouse(true) end
         if state.wheel then child:EnableMouseWheel(true) end
+        if state.links then child:SetHyperlinksEnabled(true) end
     end
     wipe(turnedOff)
 end
@@ -1802,7 +1820,7 @@ end
 -- Launchers: minimap button, Escape-menu button, addon compartment
 ------------------------------------------------------------------------
 
-local function OpenSettings()
+function OpenSettings()
     if category and Settings and Settings.OpenToCategory then
         Settings.OpenToCategory(category:GetID())
     else
@@ -1923,6 +1941,8 @@ local function RegisterOptions()
     Checkbox("showUndo", "Undo", "Shows the undo control. Ctrl+Z works either way.", UpdateControls)
     Checkbox("showEye", "Text Fade Toggle (Eye)", "Shows the eye control, which switches Fade the Text Too.", UpdateControls)
     Checkbox("showClose", "Close", "Shows the close control. /note and the keybind work either way.", UpdateControls)
+    Checkbox("showSettings", "Settings", "Shows the control that opens these settings. /note settings works either way.",
+        UpdateControls)
     Checkbox("showLock", "Lock", "Shows the lock control. /note lock and the Lock Window setting work either way.",
         UpdateControls)
     Checkbox("showSearch", "Search", "Shows the search control under the bottom-left corner. Ctrl+F works either way.",
@@ -1932,11 +1952,6 @@ local function RegisterOptions()
     Checkbox("fadeText", "Fade the Text Too",
         "When the notepad isn't hovered or focused, the text fades with everything else. Same as the eye control.",
         function() UpdateControls() ApplyFade() ApplyLock(true) end)
-    Checkbox("keepBorder", "Keep the Border When Faded",
-        "When the notepad fades, the box's border stays faintly visible so you can see where it is and how big it is.",
-        ApplyLook)
-    Slider("fadedBorderAlpha", "Faded Border Visibility",
-        "How visible the border stays with Keep the Border When Faded on.", 0.05, 1, 0.05, Percent, ApplyLook)
     Slider("fadedTextAlpha", "Faded Text Visibility",
         "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent,
         function() ApplyFade() ApplyLock(true) end)
