@@ -24,6 +24,7 @@ local DEFAULTS = {
     showTodo = true,
     showEye = true,
     showClose = true,
+    showLock = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
     keepBorder = false,     -- the box's border stays faintly visible when everything else fades
     fadedBorderAlpha = 0.4, -- how visible it stays, with keepBorder on
@@ -31,7 +32,7 @@ local DEFAULTS = {
     monoFont = false,       -- note text in a monospace font, so columns and spacing line up
     fontSize = 14,
     backgroundAlpha = 0.6,
-    lock = false,
+    lock = false,           -- can't be moved or resized, and clicks pass through it (except on the lock control)
     moveKeysExit = true,    -- holding a movement key while typing leaves the notepad and takes the letters back
     reopenAtLogin = true,
     minimapButton = false,
@@ -99,7 +100,8 @@ local function WelcomePage()
             .. "Moving your character: if you hold a movement key (like W) while typing, the notepad stops typing "
             .. "and removes the letters it typed. Press the key again to move.\n\n"
             .. "Moving the notepad: drag a tab, the edge of the box or any empty space in it. Resize from the "
-            .. "bottom-right corner.\n\n"
+            .. "bottom-right corner. The lock control (next to close) stops "
+            .. "that and lets clicks go through the notepad to the game; click it again to unlock.\n\n"
             .. "Settings: type /note settings to choose which buttons show, the text size, the background and more. "
             .. "/note opens and closes the notepad. Escape only stops typing; it never closes it." },
     } }
@@ -201,7 +203,7 @@ local function CopyBlocks(blocks)
     return copy
 end
 
-local LayoutTabs, UpdateControls, RenderPage, FocusBlock -- defined further down
+local LayoutTabs, UpdateControls, RenderPage, FocusBlock, ApplyLock -- defined further down
 
 local function ShowPage(index)
     db.currentPage = math.max(1, math.min(index, #AllPages()))
@@ -385,7 +387,7 @@ local function UpdateThumb()
     thumb:Show()
 end
 
-local SetSearchShown, FindNext, AddTodo, ResizeBlocks, OpenMenu -- defined further down
+local SetSearchShown, FindNext, AddTodo, ResizeBlocks, OpenMenu, SetLock -- defined further down
 
 local function CreateWindow()
     frame = CreateFrame("Frame", "JustANotepadFrame", UIParent)
@@ -1163,6 +1165,7 @@ function RenderPage()
     end
     snapshot = CopyBlocks(page.blocks)
     Relayout()
+    if db.lock then ApplyLock() end -- new rows take clicks until the lock turns them off
 end
 
 -- The window was resized: the blocks follow its width.
@@ -1188,7 +1191,8 @@ end
 -- The search icon sits on its own under the bottom-left corner of the window.
 ------------------------------------------------------------------------
 
-local CONTROL_ORDER = { "Close", "Eye", "Todo", "Undo" } -- right to left
+local CONTROL_ORDER = { "Close", "Lock", "Eye", "Todo", "Undo" } -- right to left
+local LOCK_ICON = "Interface\\PetBattles\\PetBattle-LockIcon"
 
 local function CreateControl(texture, tooltip, onClick, parent)
     local button = CreateFrame("Button", nil, parent or controls)
@@ -1283,6 +1287,10 @@ local function CreateControls()
             UpdateControls()
             ApplyFade()
         end),
+        Lock = CreateControl(LOCK_ICON, function()
+            if db.lock then return "Locked: clicks go through the notepad. Click to unlock." end
+            return "Lock: stops moving and resizing, and lets clicks go through the notepad to the game."
+        end, function() SetLock(not db.lock) end),
         Todo = CreateControl("Interface\\Buttons\\UI-CheckBox-Check", "Add a to-do line (Ctrl+T)", function() AddTodo() end),
         Undo = CreateControl("Interface\\Buttons\\UI-RefreshButton", function()
             return (#undoStack > 0) and "Undo (Ctrl+Z)" or "Nothing to undo"
@@ -1293,6 +1301,59 @@ local function CreateControls()
     }
     controlButtons.Search:SetPoint("CENTER")
     controlButtons.Eye.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+end
+
+-- Locking: besides stopping moving and resizing, every part of the notepad stops taking the mouse, so clicks
+-- (and the mouse wheel) go through to the game. Only the lock control keeps working, to unlock it again.
+-- Hovering still shows the notepad, since that doesn't need the mouse (IsMouseOver checks position only).
+local turnedOff = {} -- frames the lock took the mouse from: [frame] = { mouse = true/false, wheel = true/false }
+
+local function TurnOffMouse(parent)
+    for _, child in ipairs({ parent:GetChildren() }) do
+        if child ~= controlButtons.Lock then
+            if not turnedOff[child] then
+                local mouse = child:IsMouseEnabled()
+                local wheel = child.IsMouseWheelEnabled and child:IsMouseWheelEnabled()
+                if mouse or wheel then
+                    turnedOff[child] = { mouse = mouse, wheel = wheel }
+                    if mouse then child:EnableMouse(false) end
+                    if wheel then child:EnableMouseWheel(false) end
+                end
+            end
+            TurnOffMouse(child)
+        end
+    end
+end
+
+function ApplyLock()
+    if not frame then return end
+    if db.lock then
+        StopMove()
+        if focused then focused.edit:ClearFocus() end
+        if searchBox then searchBox:ClearFocus() end
+        if renameBox then renameBox:ClearFocus() end
+        if not turnedOff[frame] and frame:IsMouseEnabled() then
+            turnedOff[frame] = { mouse = true }
+            frame:EnableMouse(false)
+        end
+        TurnOffMouse(frame) -- also run after new tabs or rows appear while locked
+    else
+        for child, state in pairs(turnedOff) do
+            if state.mouse then child:EnableMouse(true) end
+            if state.wheel then child:EnableMouseWheel(true) end
+        end
+        wipe(turnedOff)
+    end
+    -- The lock is bright while locked, dim and grey while not.
+    local lock = controlButtons.Lock
+    lock.rest = db.lock and 0.9 or 0.35
+    lock.icon:SetDesaturated(not db.lock)
+    if not lock:IsMouseOver() then lock.icon:SetAlpha(lock.rest) end
+end
+
+function SetLock(locked)
+    db.lock = locked and true or false
+    ApplyLock()
 end
 
 ------------------------------------------------------------------------
@@ -1626,6 +1687,7 @@ function LayoutTabs()
     StyleTab(addTab, false)
     controls.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
     searchBar.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
+    if db.lock then ApplyLock() end -- the same for new tabs
 end
 
 local function CreateTabs()
@@ -1794,6 +1856,8 @@ local function RegisterOptions()
     Checkbox("showUndo", "Undo", "Shows the undo control. Ctrl+Z works either way.", UpdateControls)
     Checkbox("showEye", "Text Fade Toggle (Eye)", "Shows the eye control, which switches Fade the Text Too.", UpdateControls)
     Checkbox("showClose", "Close", "Shows the close control. /note and the keybind work either way.", UpdateControls)
+    Checkbox("showLock", "Lock", "Shows the lock control. /note lock and the Lock Window setting work either way.",
+        UpdateControls)
     Checkbox("showSearch", "Search", "Shows the search control under the bottom-left corner. Ctrl+F works either way.",
         UpdateControls)
 
@@ -1816,7 +1880,9 @@ local function RegisterOptions()
         function() RetryMonoFont() ApplyLook() end)
 
     Header("Window")
-    Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized.")
+    Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized, and lets clicks go through it "
+        .. "to the game, so you can't click into it by accident. The lock control still works, to unlock it. "
+        .. "Same as the lock control and /note lock.", ApplyLock)
     Checkbox("moveKeysExit", "Movement Keys Leave the Notepad",
         "Holding a movement key (such as W, A, S or D) while typing stops typing and takes back the letters it typed. "
         .. "Release the key and press it again to move. Tapping the keys still types as normal.")
@@ -1852,6 +1918,9 @@ SlashCmdList.JUSTANOTEPAD = function(message)
     elseif command == "bg" and tonumber(value) then
         db.backgroundAlpha = math.max(0, math.min(100, tonumber(value))) / 100
         ApplyLook()
+    elseif command == "lock" then
+        SetLock(not db.lock)
+        Print(db.lock and "Locked: clicks go through the notepad. /note lock again unlocks it." or "Unlocked.")
     elseif command == "fontcheck" then
         FontReport()
     elseif command == "mono" then
@@ -1870,7 +1939,7 @@ SlashCmdList.JUSTANOTEPAD = function(message)
         ShowPage(IndexOf(page))
     else
         Print("/note opens or closes it. Also: /note settings, /note reset (position and size), "
-            .. "/note size 8-28, /note bg 0-100, /note mono (monospace font on/off), /note welcome (adds the welcome page again)")
+            .. "/note lock (on/off), /note size 8-28, /note bg 0-100, /note mono (monospace font on/off), /note welcome (adds the welcome page again)")
     end
 end
 
@@ -1902,10 +1971,11 @@ events:SetScript("OnEvent", function(_, event, button)
         RegisterOptions()
         HookGameMenu()
         UpdateMinimapButton()
+        ApplyLock()
         if db.reopenAtLogin and wasOpen then frame:Show() end
         db.open = frame:IsShown()
     elseif event == "GLOBAL_MOUSE_UP" and frame then
-        if button == "RightButton" and frame:IsShown() then
+        if button == "RightButton" and frame:IsShown() and not db.lock then
             for _, widget in ipairs(active) do
                 if not widget.isTodo and widget:IsMouseOver() then ShowConvertMenu(widget) end
             end
