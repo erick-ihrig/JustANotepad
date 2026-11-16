@@ -55,6 +55,9 @@ local TAB_HEIGHT = 18
 local HEADER = TAB_HEIGHT + 1   -- the row of tabs and controls above the text box
 local BLOCK_GAP = 2         -- between a to-do line and its neighbours
 local TODO_INDENT = 34      -- checkbox, then the delete circle, then the to-do's text
+-- Extra height every text box gets beyond its lines. A box whose lines only just fit doesn't draw the cursor or
+-- the highlight (a one-line note couldn't be highlighted until it had a second line).
+local CURSOR_ROOM = 4
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- Bundled with the addon (DejaVu Sans Mono; license in Fonts/LICENSE-DejaVu.txt). The game has no monospace font.
 local MONO_FONT = "Interface\\AddOns\\JustANotepad\\Fonts\\DejaVuSansMono.ttf"
@@ -625,13 +628,13 @@ local function Relayout()
     local total = 0
     local lineHeight = LineHeight()
     for index, widget in ipairs(active) do
-        -- An empty text block still needs a full line to click on and type in. A to-do row is as tall as its box,
-        -- which UpdateTodoLook sizes to the wrapped text.
+        -- A text block (even an empty one) is at least one full line plus room for the cursor and highlight; the
+        -- game sizes longer ones itself. A to-do row is as tall as its box, which UpdateTodoLook sizes.
         local edit = widget.edit
         if widget.isTodo then
             widget:SetHeight(edit:GetHeight() or 0)
-        elseif (edit:GetHeight() or 0) < lineHeight then
-            edit:SetHeight(lineHeight + 2)
+        elseif (edit:GetHeight() or 0) < lineHeight + CURSOR_ROOM then
+            edit:SetHeight(lineHeight + CURSOR_ROOM)
         end
         total = total + (widget:GetHeight() or 0) + (index > 1 and BLOCK_GAP or 0)
     end
@@ -672,7 +675,7 @@ local function UpdateTodoLook(row)
     row.edit:SetTextColor(shade, shade, shade)
     local lineHeight = LineHeight() -- also sets the measuring font for LineWidths
     local widths = block.text ~= "" and LineWidths(block.text, row.textWidth or 100) or {}
-    local height = math.max(1, #widths) * lineHeight + TODO_PAD * 2
+    local height = math.max(1, #widths) * lineHeight + TODO_PAD * 2 + CURSOR_ROOM
     if math.abs((row.edit:GetHeight() or 0) - height) > 0.5 then row.edit:SetHeight(height) end
     row.edit:SetTextInsets(0, 0, TODO_PAD, TODO_PAD)
     if not block.done then widths = {} end
