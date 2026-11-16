@@ -414,7 +414,7 @@ local function CreateWindow()
     box:SetPoint("TOPLEFT", 0, -HEADER)
     box:SetPoint("BOTTOMRIGHT", 0, 0)
     box:SetBackdrop({ bgFile = WHITE })
-    -- The border is its own frame, so it can stay faintly visible when the background has faded out.
+    -- The border is its own frame (fades with the box).
     outline = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
     outline:SetAllPoints(box)
     outline:SetBackdrop({ edgeFile = WHITE, edgeSize = 1 })
@@ -1151,7 +1151,9 @@ end
 function RenderPage()
     if not content then return end
     local page = CurrentPage()
+    local wasShown = {}
     for _, widget in ipairs(active) do
+        wasShown[widget] = true
         widget.block = nil
         widget.edit:ClearFocus()
         widget:Hide()
@@ -1164,7 +1166,7 @@ function RenderPage()
     PickFont()
     local width = math.max(40, scrollFrame:GetWidth() or 200)
     content:SetWidth(width)
-    local above, reflow
+    local above, reflow = nil, {}
     for _, block in ipairs(page.blocks) do
         local widget
         if block.todo then
@@ -1187,7 +1189,9 @@ function RenderPage()
         local fontKey = fontFile .. db.fontSize
         if widget.fontKey ~= fontKey then
             widget.fontKey = fontKey
-            reflow = true
+            -- Only boxes that sat hidden while the size changed need it. Nudging the boxes already on screen
+            -- (the page whose text size was just changed) made their text vanish for a moment.
+            if not wasShown[widget] then reflow[#reflow + 1] = widget end
         end
         widget.edit:SetFont(fontFile, db.fontSize, fontFlags)
         widget.edit:SetTextColor(1, 1, 1)
@@ -1203,9 +1207,11 @@ function RenderPage()
     if db.lock then ApplyLock() end -- new rows take clicks until the lock turns them off
     -- A box that was drawn before in another font or size can keep its old line layout until its width changes,
     -- so its width is nudged and put back (what resizing the window by hand did to fix it).
-    if reflow then
+    if #reflow > 0 then
         C_Timer.After(0, function()
-            for _, widget in ipairs(active) do widget.edit:SetWidth((widget.edit:GetWidth() or 100) - 1) end
+            for _, widget in ipairs(reflow) do
+                if widget.block then widget.edit:SetWidth((widget.edit:GetWidth() or 100) - 1) end
+            end
             C_Timer.After(0, ResizeBlocks)
         end)
     end
