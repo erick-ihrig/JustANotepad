@@ -1071,6 +1071,7 @@ local function CreateTodoRow()
     -- The checkbox: a small dark square with a thin edge, and a check mark when ticked.
     local check = CreateFrame("Button", nil, row)
     check:SetSize(13, 13)
+    check.isCheckbox = true -- still takes clicks while the notepad is locked
     row.check = check -- placed beside the first line of text when the page is drawn
     local edge = check:CreateTexture(nil, "BACKGROUND")
     edge:SetAllPoints()
@@ -1091,7 +1092,7 @@ local function CreateTodoRow()
         UpdateTodoLook(row)
     end)
 
-    -- The delete circle: shows next to the checkbox while the mouse is on the row.
+    -- The delete circle: shows next to the checkbox while the mouse is on the row (never while locked).
     local delete = CreateFrame("Button", nil, row)
     delete:SetSize(13, 13)
     delete:SetPoint("LEFT", check, "RIGHT", 3, 0)
@@ -1101,7 +1102,7 @@ local function CreateTodoRow()
         if row.block then DeleteTodo(row.block) end
     end)
     row:SetScript("OnUpdate", function(self)
-        delete:SetAlpha(self:IsMouseOver() and 1 or 0)
+        delete:SetAlpha((self:IsMouseOver() and not db.lock) and 1 or 0)
     end)
 
     -- The text wraps inside its own indented column, so every line starts where the first one does.
@@ -1292,6 +1293,7 @@ local function CreateControls()
             db.fadeText = not db.fadeText
             UpdateControls()
             ApplyFade()
+            ApplyLock(true)
         end),
         Lock = CreateControl(LOCK_ICON, function()
             if db.lock then return "Locked: clicks go through the notepad. Click to unlock." end
@@ -1310,13 +1312,18 @@ local function CreateControls()
 end
 
 -- Locking: besides stopping moving and resizing, every part of the notepad stops taking the mouse, so clicks
--- (and the mouse wheel) go through to the game. Only the lock control keeps working, to unlock it again.
+-- (and the mouse wheel) go through to the game. Only the lock control keeps working, to unlock it again, and the
+-- to-do checkboxes, so you can still tick things off (unless the text, and so the checkboxes, are faded out completely).
 -- Hovering still shows the notepad, since that doesn't need the mouse (IsMouseOver checks position only).
 local turnedOff = {} -- frames the lock took the mouse from: [frame] = { mouse = true/false, wheel = true/false }
 
-local function TurnOffMouse(parent)
+local function CheckboxesWhenLocked()
+    return not (db.fadeText and (db.fadedTextAlpha or 0) <= 0)
+end
+
+local function TurnOffMouse(parent, keepCheckboxes)
     for _, child in ipairs({ parent:GetChildren() }) do
-        if child ~= controlButtons.Lock then
+        if child ~= controlButtons.Lock and not (keepCheckboxes and child.isCheckbox) then
             if not turnedOff[child] then
                 local mouse = child:IsMouseEnabled()
                 local wheel = child.IsMouseWheelEnabled and child:IsMouseWheelEnabled()
@@ -1326,13 +1333,23 @@ local function TurnOffMouse(parent)
                     if wheel then child:EnableMouseWheel(false) end
                 end
             end
-            TurnOffMouse(child)
+            TurnOffMouse(child, keepCheckboxes)
         end
     end
 end
 
-function ApplyLock()
+local function GiveMouseBack()
+    for child, state in pairs(turnedOff) do
+        if state.mouse then child:EnableMouse(true) end
+        if state.wheel then child:EnableMouseWheel(true) end
+    end
+    wipe(turnedOff)
+end
+
+-- recheck: the fade settings changed, so whether the checkboxes stay clickable may have too.
+function ApplyLock(recheck)
     if not frame then return end
+    if recheck then GiveMouseBack() end
     if db.lock then
         StopMove()
         if focused then focused.edit:ClearFocus() end
@@ -1342,13 +1359,9 @@ function ApplyLock()
             turnedOff[frame] = { mouse = true }
             frame:EnableMouse(false)
         end
-        TurnOffMouse(frame) -- also run after new tabs or rows appear while locked
+        TurnOffMouse(frame, CheckboxesWhenLocked()) -- also run after new tabs or rows appear while locked
     else
-        for child, state in pairs(turnedOff) do
-            if state.mouse then child:EnableMouse(true) end
-            if state.wheel then child:EnableMouseWheel(true) end
-        end
-        wipe(turnedOff)
+        GiveMouseBack()
     end
     -- The lock is bright while locked, dim and grey while not.
     local lock = controlButtons.Lock
@@ -1871,14 +1884,15 @@ local function RegisterOptions()
     Header("Look")
     Checkbox("fadeText", "Fade the Text Too",
         "When the notepad isn't hovered or focused, the text fades with everything else. Same as the eye control.",
-        function() UpdateControls() ApplyFade() end)
+        function() UpdateControls() ApplyFade() ApplyLock(true) end)
     Checkbox("keepBorder", "Keep the Border When Faded",
         "When the notepad fades, the box's border stays faintly visible so you can see where it is and how big it is.",
         ApplyLook)
     Slider("fadedBorderAlpha", "Faded Border Visibility",
         "How visible the border stays with Keep the Border When Faded on.", 0.05, 1, 0.05, Percent, ApplyLook)
     Slider("fadedTextAlpha", "Faded Text Visibility",
-        "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent, ApplyFade)
+        "How visible the text stays when it fades. 0% hides it completely.", 0, 0.9, 0.05, Percent,
+        function() ApplyFade() ApplyLock(true) end)
     Slider("backgroundAlpha", "Background", "How solid the box behind the text is.", 0, 1, 0.05, Percent, ApplyLook)
     Slider("fontSize", "Text Size", "The size of the note text.", 8, 28, 1, function(value) return tostring(value) end,
         ApplyLook)
@@ -1889,7 +1903,7 @@ local function RegisterOptions()
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized, and lets clicks go through it "
         .. "to the game, so you can't click into it by accident. The lock control still works, to unlock it. "
-        .. "Same as the lock control and /note lock.", ApplyLock)
+        .. "Same as the lock control and /note lock.", function() ApplyLock() end)
     Checkbox("moveKeysExit", "Movement Keys Leave the Notepad",
         "Holding a movement key (such as W, A, S or D) while typing stops typing and takes back the letters it typed. "
         .. "Release the key and press it again to move. Tapping the keys still types as normal.")
