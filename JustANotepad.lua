@@ -1835,38 +1835,6 @@ end
 BINDING_HEADER_JUSTANOTEPAD = "Just a Notepad"
 BINDING_NAME_JUSTANOTEPAD_TOGGLE = "Toggle Notepad"
 
--- /note clickdebug (temporary): after each click on the notepad, prints what the click landed on and how the
--- page's text boxes are laid out, for tracking down one-line notes that can't be clicked into or highlighted.
-local clickDebug = false
-
-local function Describe(target)
-    if not target then return "nothing" end
-    for index, widget in ipairs(active) do
-        if target == widget or target == widget.edit then return (widget.isTodo and "to-do " or "text ") .. index end
-    end
-    if target == scrollFrame then return "empty page space" end
-    if target == frame then return "window edge" end
-    if target == content then return "page area" end
-    return tostring(target.GetName and target:GetName() or target:GetObjectType())
-end
-
-local function ReportClick(when)
-    if not clickDebug or not frame:IsShown() then return end
-    local foci = GetMouseFoci and GetMouseFoci() or { GetMouseFocus and GetMouseFocus() }
-    local scale = UIParent:GetEffectiveScale()
-    local _, mouseY = GetCursorPosition()
-    Print(when .. ": under mouse " .. Describe(foci and foci[1]) .. ", typing in "
-        .. (focused and Describe(focused.edit) or "nothing") .. ", mouse y " .. math.floor(mouseY / scale)
-        .. ", line height " .. LineHeight() .. ", cursor height " .. tostring(cursorHeights[FontKey()]))
-    for index, widget in ipairs(active) do
-        local edit = widget.edit
-        local _, breaks = (edit:GetText() or ""):gsub("\n", "")
-        Print(string.format("  %d %s: top %d, bottom %d, height %d, lines %d, cursor at %d", index,
-            widget.isTodo and "to-do" or "text", math.floor(edit:GetTop() or 0), math.floor(edit:GetBottom() or 0),
-            math.floor(edit:GetHeight() or 0), breaks + 1, edit:GetCursorPosition() or -1))
-    end
-end
-
 SLASH_JUSTANOTEPAD1 = "/note"
 SLASH_JUSTANOTEPAD2 = "/justanotepad"
 SlashCmdList.JUSTANOTEPAD = function(message)
@@ -1884,9 +1852,6 @@ SlashCmdList.JUSTANOTEPAD = function(message)
     elseif command == "bg" and tonumber(value) then
         db.backgroundAlpha = math.max(0, math.min(100, tonumber(value))) / 100
         ApplyLook()
-    elseif command == "clickdebug" then
-        clickDebug = not clickDebug
-        Print("Click debug messages are " .. (clickDebug and "on. Click on the text and copy what's printed." or "off."))
     elseif command == "fontcheck" then
         FontReport()
     elseif command == "mono" then
@@ -1940,14 +1905,12 @@ events:SetScript("OnEvent", function(_, event, button)
         if db.reopenAtLogin and wasOpen then frame:Show() end
         db.open = frame:IsShown()
     elseif event == "GLOBAL_MOUSE_UP" and frame then
-        if clickDebug and IsHovered() then C_Timer.After(0.1, function() ReportClick("Released") end) end
         if button == "RightButton" and frame:IsShown() then
             for _, widget in ipairs(active) do
                 if not widget.isTodo and widget:IsMouseOver() then ShowConvertMenu(widget) end
             end
         end
     elseif event == "GLOBAL_MOUSE_DOWN" and frame then
-        if clickDebug and IsHovered() then ReportClick("Pressed") end
         C_Timer.After(0, ClearFocusIfClickedOutside) -- next frame, once the click has landed
     end
 end)
