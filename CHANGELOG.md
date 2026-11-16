@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- Fixed: a note with only one line couldn't be clicked into or highlighted until it had a second line.
 - Fixed: turning on Monospace Font could leave the notes in the normal font.
 
 ## 1.1.0
