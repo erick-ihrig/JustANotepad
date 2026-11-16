@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - Fixed: the blinking cursor didn't show in to-do lines.
 - New Monospace Font option (Settings > Look, or `/note mono`): every character takes the same width, so columns, lists and spacing line up. Uses the bundled DejaVu Sans Mono.
