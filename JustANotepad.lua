@@ -28,7 +28,7 @@ local DEFAULTS = {
     showLock = true,
     fadeText = false,       -- the eye toggle: the text fades with everything else
     fadedTextAlpha = 0,     -- how visible the text stays when it fades (0 = gone)
-    monoFont = false,       -- note text in a monospace font, so columns and spacing line up
+    monoFont = true,        -- note text in a monospace font, so columns and spacing line up
     fontSize = 14,
     backgroundAlpha = 0.6,
     lock = false,           -- can't be moved or resized, and clicks pass through it (except on the lock control)
@@ -94,6 +94,8 @@ local function WelcomePage()
         { text = "Undo: the arrow button above, or Ctrl+Z.\n\n"
             .. "Pages: left-click + to add a page for all your characters, or right-click + for a page only this "
             .. "character sees. Right-click a tab to rename, move, convert or delete it.\n\n"
+            .. "Links: while typing, shift-click an item, spell or quest to put its link in your note, like in "
+            .. "chat. Click a link to see it.\n\n"
             .. "Search: the magnifier under the bottom-left corner, or Ctrl+F.\n\n"
             .. "Fading: move the mouse away and click somewhere else, and everything but the text fades out. "
             .. "The eye button makes the text fade too.\n\n"
@@ -101,8 +103,9 @@ local function WelcomePage()
             .. "and removes the letters it typed. Press the key again to move.\n\n"
             .. "Moving the notepad: drag a tab, the edge of the box or any empty space in it. Resize from the "
             .. "bottom-right corner. The lock control (left of the tabs) stops "
-            .. "that and lets clicks go through the notepad to the game; click it again to unlock.\n\n"
-            .. "Settings: type /note settings to choose which buttons show, the text size, the background and more. "
+            .. "that and lets clicks go through the notepad to the game, except the to-do checkboxes, so you can still "
+            .. "tick things off. Click it again to unlock.\n\n"
+            .. "Settings: click the gear button above, or type /note settings, to choose which buttons show, the text size, the background and more. "
             .. "/note opens and closes the notepad. Escape only stops typing; it never closes it." },
     } }
 end

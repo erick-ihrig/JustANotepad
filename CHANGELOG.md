@@ -1,15 +1,17 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
-- New settings control (gear) with the other controls at the top-right; it opens the settings. It can be hidden like the others.
+- New: locking the notepad now also lets clicks go through it to the game, so you can't click into it by accident. Lock and unlock it with the new lock control at the top-left (left of the tabs), the Lock Window setting or `/note lock`. While locked, only the lock control and the to-do checkboxes take clicks (the checkboxes stop too if the text is set to fade out completely), and hovering shows only the lock control.
+- New: shift-click an item, spell or quest while typing to put its link in your note, like in chat. Click a link to see it (not while locked); it deletes as one piece. Search finds the link's name, not its hidden data.
+- New Hide in Combat option (Settings > Window): the notepad hides when combat starts and comes back when it ends.
+- New settings control (gear) with the other controls at the top-right. It can be hidden like the others.
+- The monospace font is now on by default for new installs. Existing settings are kept.
+- The welcome page covers links, the lock and the settings control.
 - Removed the Keep the Border When Faded option.
-- Fixed: after changing the text size, switching pages could leave the text laid out wrongly until the window was resized.
-- New: shift-click an item, spell or quest while typing to put its link in your note, like in chat. Click a link to see it (not while the notepad is locked); it deletes as one piece. Search finds the link's name, not its hidden data.
-- New Hide in Combat option (Settings > Window): the notepad hides when combat starts and comes back, faded, when it ends.
-- The lock now also lets clicks go through the notepad to the game, so you can't click into it by accident. Lock and unlock it with the new lock control at the top-left, left of the tabs, the Lock Window setting or `/note lock`. While locked, only the lock control and the to-do checkboxes take clicks (the checkboxes stop too if the text is set to fade out completely), and hovering shows only the lock control.
 - Fixed: a note with only one line couldn't be highlighted, and clicking into a to-do always put an invisible cursor at the start of its text.
 - Fixed: turning on Monospace Font could leave the notes in the normal font.
+- Fixed: after changing the text size, switching pages could leave the text laid out wrongly until the window was resized.
 
 ## 1.1.0
 
