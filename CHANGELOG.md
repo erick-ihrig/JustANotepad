@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed: a note with only one line couldn't be highlighted, and clicking into a to-do always put an invisible cursor at the start of its text.
 - Fixed: turning on Monospace Font could leave the notes in the normal font.
 
 ## 1.1.0

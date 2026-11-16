@@ -55,6 +55,8 @@ local TAB_HEIGHT = 18
 local HEADER = TAB_HEIGHT + 1   -- the row of tabs and controls above the text box
 local BLOCK_GAP = 2         -- between a to-do line and its neighbours
 local TODO_INDENT = 34      -- checkbox, then the delete circle, then the to-do's text
+local TODO_PAD = 2          -- space above and below a to-do's text, inside its row
+local CHECK_SIZE = 13
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- Bundled with the addon (DejaVu Sans Mono; license in Fonts/LICENSE-DejaVu.txt). The game has no monospace font.
 local MONO_FONT = "Interface\\AddOns\\JustANotepad\\Fonts\\DejaVuSansMono.ttf"
@@ -617,23 +619,32 @@ local function LineHeight()
     return math.ceil(height)
 end
 
+-- The height of one line of note text as the game lays it out: the cursor's height, which the game reports while
+-- typing. Before that's known, the measured height of a line.
+local function TextLineHeight()
+    return cursorHeights[FontKey()] or LineHeight()
+end
+
 -- Keeps the page's height (and so the scroll range) in step with its blocks.
+-- The text boxes themselves are never given a height: the game sizes multi-line boxes to their text, and forcing
+-- a different height makes the two fight, which sends the cursor to the front and stops it showing (one-line
+-- notes couldn't be highlighted, and to-dos couldn't be clicked into). Rows are sized around the boxes instead.
 local sizing = false
 local function Relayout()
     if sizing then return end
     sizing = true
     local total = 0
-    local lineHeight = LineHeight()
     for index, widget in ipairs(active) do
-        -- An empty text block still needs a full line to click on and type in. A to-do row is as tall as its box,
-        -- which UpdateTodoLook sizes to the wrapped text.
-        local edit = widget.edit
+        local height
         if widget.isTodo then
-            widget:SetHeight(edit:GetHeight() or 0)
-        elseif (edit:GetHeight() or 0) < lineHeight then
-            edit:SetHeight(lineHeight + 2)
+            -- A to-do row: its text box (sized by the game), with a little space above and below.
+            height = math.max(widget.edit:GetHeight() or 0, CHECK_SIZE) + TODO_PAD * 2
+            if math.abs((widget:GetHeight() or 0) - height) > 0.5 then widget:SetHeight(height) end
+        else
+            -- A text block counts at least one line, so an empty page still has room to click and type.
+            height = math.max(widget:GetHeight() or 0, TextLineHeight())
         end
-        total = total + (widget:GetHeight() or 0) + (index > 1 and BLOCK_GAP or 0)
+        total = total + height + (index > 1 and BLOCK_GAP or 0)
     end
     content:SetHeight(math.max(1, total))
     sizing = false
@@ -660,9 +671,7 @@ local function LineWidths(text, maxWidth)
     return widths
 end
 
--- Sizes a to-do's box to its wrapped text (the game doesn't do it for these boxes, and one shorter than a line
--- shows nothing), and greys ticked to-dos with a line through each line of their text.
-local TODO_PAD = 2 -- above and below the text in a to-do's box
+-- Greys ticked to-dos with a line through each line of their text.
 
 local function UpdateTodoLook(row)
     local block = row.block
@@ -670,11 +679,13 @@ local function UpdateTodoLook(row)
     row.mark:SetShown(block.done and true or false)
     local shade = block.done and 0.5 or 1
     row.edit:SetTextColor(shade, shade, shade)
-    local lineHeight = LineHeight() -- also sets the measuring font for LineWidths
+    LineHeight() -- sets the measuring font for LineWidths
     local widths = block.text ~= "" and LineWidths(block.text, row.textWidth or 100) or {}
-    local height = math.max(1, #widths) * lineHeight + TODO_PAD * 2
-    if math.abs((row.edit:GetHeight() or 0) - height) > 0.5 then row.edit:SetHeight(height) end
-    row.edit:SetTextInsets(0, 0, TODO_PAD, TODO_PAD)
+    local lineHeight = cursorHeights[FontKey()]
+    if not lineHeight then
+        local boxHeight = row.edit:GetHeight() or 0
+        lineHeight = boxHeight > 0 and boxHeight / math.max(1, #widths) or LineHeight()
+    end
     if not block.done then widths = {} end
     for index, width in ipairs(widths) do
         local strike = row.strikes[index]
@@ -685,7 +696,7 @@ local function UpdateTodoLook(row)
             row.strikes[index] = strike
         end
         strike:ClearAllPoints()
-        strike:SetPoint("TOPLEFT", 0, -math.floor(TODO_PAD + (index - 0.5) * lineHeight))
+        strike:SetPoint("TOPLEFT", 0, -math.floor((index - 0.5) * lineHeight))
         strike:SetWidth(math.max(1, width))
         strike:Show()
     end
@@ -1087,7 +1098,8 @@ local function CreateTodoRow()
 
     -- The text wraps inside its own indented column, so every line starts where the first one does.
     local edit = CreateFrame("EditBox", nil, row)
-    edit:SetPoint("TOPLEFT", TODO_INDENT, 0)
+    edit:SetPoint("TOPLEFT", TODO_INDENT, -TODO_PAD)
+    edit:SetTextInsets(0, 0, 0, 0)
     edit:SetMaxLetters(MAX_TODO_LETTERS)
     SetUpEdit(edit, row)
     edit:SetScript("OnEnterPressed", function()
@@ -1128,7 +1140,7 @@ function RenderPage()
             widget.textWidth = width - TODO_INDENT
             widget.edit:SetWidth(widget.textWidth)
             widget.check:ClearAllPoints()
-            widget.check:SetPoint("TOPLEFT", 1, -math.max(0, math.floor(2 + (LineHeight() - 13) / 2)))
+            widget.check:SetPoint("TOPLEFT", 1, -(TODO_PAD + math.max(0, math.floor((TextLineHeight() - CHECK_SIZE) / 2))))
         else
             widget = table.remove(textPool) or CreateTextBlock()
         end
@@ -1164,7 +1176,7 @@ function ResizeBlocks()
             widget.textWidth = width - TODO_INDENT
             widget.edit:SetWidth(widget.textWidth)
             widget.check:ClearAllPoints()
-            widget.check:SetPoint("TOPLEFT", 1, -math.max(0, math.floor(2 + (LineHeight() - 13) / 2)))
+            widget.check:SetPoint("TOPLEFT", 1, -(TODO_PAD + math.max(0, math.floor((TextLineHeight() - CHECK_SIZE) / 2))))
             UpdateTodoLook(widget)
         end
     end
