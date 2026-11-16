@@ -64,7 +64,7 @@ local MONO_FONT = "Interface\\AddOns\\JustANotepad\\Fonts\\DejaVuSansMono.ttf"
 
 local db
 local frame, box, outline, scrollFrame, content, thumb, grip, measure
-local controls, controlButtons, searchBar, searchBox, searchResult
+local controls, controlButtons, searchBar, searchBox, searchResult, lockBar
 local tabBar, tabs, addTab, renameBox = nil, {}, nil, nil
 local category
 local minimapButton
@@ -100,7 +100,7 @@ local function WelcomePage()
             .. "Moving your character: if you hold a movement key (like W) while typing, the notepad stops typing "
             .. "and removes the letters it typed. Press the key again to move.\n\n"
             .. "Moving the notepad: drag a tab, the edge of the box or any empty space in it. Resize from the "
-            .. "bottom-right corner. The lock control (next to close) stops "
+            .. "bottom-right corner. The lock control (left of the tabs) stops "
             .. "that and lets clicks go through the notepad to the game; click it again to unlock.\n\n"
             .. "Settings: type /note settings to choose which buttons show, the text size, the background and more. "
             .. "/note opens and closes the notepad. Escape only stops typing; it never closes it." },
@@ -303,11 +303,9 @@ local function ApplyFade()
     local border = db.keepBorder and db.fadedBorderAlpha or 0
     outline:SetAlpha(border + (1 - border) * shown)
     tabBar:SetAlpha(shown)
-    controls:SetAlpha(fade)
-    controls.back:SetAlpha(db.lock and 0 or 1)
-    for name, button in pairs(controlButtons) do
-        if name ~= "Lock" and name ~= "Search" then button:SetAlpha(db.lock and 0 or 1) end
-    end
+    controls:SetAlpha(shown)
+    lockBar:SetAlpha(fade)
+    lockBar.back:SetAlpha(db.lock and 0 or 1)
     searchBar:SetAlpha(shown)
     searchBox:SetAlpha(shown)
     grip:SetAlpha(shown)
@@ -1198,7 +1196,7 @@ end
 -- The search icon sits on its own under the bottom-left corner of the window.
 ------------------------------------------------------------------------
 
-local CONTROL_ORDER = { "Close", "Lock", "Eye", "Todo", "Undo" } -- right to left
+local CONTROL_ORDER = { "Close", "Eye", "Todo", "Undo" } -- right to left (the lock sits left of the tabs)
 local LOCK_ICON = "Interface\\PetBattles\\PetBattle-LockIcon"
 
 local function CreateControl(texture, tooltip, onClick, parent)
@@ -1247,6 +1245,12 @@ function UpdateControls()
     controls:SetWidth(math.max(1, count * (CONTROL_SIZE + 4) + 2))
     controls.back:SetShown(count > 0)
 
+    lockBar:SetShown(db.showLock)
+    if tabBar then
+        tabBar:ClearAllPoints()
+        tabBar:SetPoint("TOPLEFT", db.showLock and (TAB_HEIGHT + 1) or 0, 0)
+    end
+
     -- The eye is bright while the text stays visible, dim while it fades with the rest.
     local eye = controlButtons.Eye
     eye.rest = db.fadeText and 0.25 or 0.7
@@ -1276,6 +1280,13 @@ local function CreateControls()
     controls.back = controls:CreateTexture(nil, "BACKGROUND") -- the same shade as an unselected tab
     controls.back:SetAllPoints()
 
+    -- The lock sits on its own at the top-left corner, just left of the first tab.
+    lockBar = CreateFrame("Frame", nil, frame)
+    lockBar:SetPoint("TOPLEFT", 0, 0)
+    lockBar:SetSize(TAB_HEIGHT, TAB_HEIGHT)
+    lockBar.back = lockBar:CreateTexture(nil, "BACKGROUND")
+    lockBar.back:SetAllPoints()
+
     searchBar = CreateFrame("Frame", nil, frame)
     searchBar:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -1)
     searchBar:SetSize(TAB_HEIGHT, TAB_HEIGHT)
@@ -1298,7 +1309,7 @@ local function CreateControls()
         Lock = CreateControl(LOCK_ICON, function()
             if db.lock then return "Locked: clicks go through the notepad. Click to unlock." end
             return "Lock: stops moving and resizing, and lets clicks go through the notepad to the game."
-        end, function() SetLock(not db.lock) end),
+        end, function() SetLock(not db.lock) end, lockBar),
         Todo = CreateControl("Interface\\Buttons\\UI-CheckBox-Check", "Add a to-do line (Ctrl+T)", function() AddTodo() end),
         Undo = CreateControl("Interface\\Buttons\\UI-RefreshButton", function()
             return (#undoStack > 0) and "Undo (Ctrl+Z)" or "Nothing to undo"
@@ -1308,6 +1319,7 @@ local function CreateControls()
         end, searchBar),
     }
     controlButtons.Search:SetPoint("CENTER")
+    controlButtons.Lock:SetPoint("CENTER")
     controlButtons.Eye.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 end
 
@@ -1675,7 +1687,7 @@ function LayoutTabs()
     local showAdd = count < MAX_PAGES
 
     -- Room for the tabs: the header's width minus the controls.
-    local reserved = controls:GetWidth() + 6
+    local reserved = controls:GetWidth() + 6 + (db.showLock and TAB_HEIGHT + 1 or 0)
     local available = (frame:GetWidth() or 320) - reserved - (showAdd and addWidth + 1 or 0) - count
 
     -- Each tab is as wide as its name; when they don't fit, they all shrink evenly.
@@ -1707,12 +1719,13 @@ function LayoutTabs()
     StyleTab(addTab, false)
     controls.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
     searchBar.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
+    lockBar.back:SetColorTexture(0, 0, 0, db.backgroundAlpha * 0.6)
     if db.lock then ApplyLock() end -- the same for new tabs
 end
 
 local function CreateTabs()
     tabBar = CreateFrame("Frame", nil, frame)
-    tabBar:SetPoint("TOPLEFT", 0, 0)
+    tabBar:SetPoint("TOPLEFT", db.showLock and (TAB_HEIGHT + 1) or 0, 0)
     tabBar:SetSize(1, TAB_HEIGHT)
 
     addTab = CreateTab()
