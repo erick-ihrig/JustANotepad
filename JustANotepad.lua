@@ -297,18 +297,24 @@ local function IsActive()
 end
 
 local function ApplyFade()
-    box:SetAlpha(fade)
+    -- While locked, hovering brings back only the lock control; everything else stays faded.
+    local shown = db.lock and 0 or fade
+    box:SetAlpha(shown)
     local border = db.keepBorder and db.fadedBorderAlpha or 0
-    outline:SetAlpha(border + (1 - border) * fade)
-    tabBar:SetAlpha(fade)
+    outline:SetAlpha(border + (1 - border) * shown)
+    tabBar:SetAlpha(shown)
     controls:SetAlpha(fade)
-    searchBar:SetAlpha(fade)
-    searchBox:SetAlpha(fade)
-    grip:SetAlpha(fade)
-    thumb:SetAlpha(fade * 0.5)
+    controls.back:SetAlpha(db.lock and 0 or 1)
+    for name, button in pairs(controlButtons) do
+        if name ~= "Lock" and name ~= "Search" then button:SetAlpha(db.lock and 0 or 1) end
+    end
+    searchBar:SetAlpha(shown)
+    searchBox:SetAlpha(shown)
+    grip:SetAlpha(shown)
+    thumb:SetAlpha(shown * 0.5)
     if db.fadeText then
         local low = db.fadedTextAlpha or 0
-        content:SetAlpha(low + (1 - low) * fade)
+        content:SetAlpha(low + (1 - low) * shown)
     else
         content:SetAlpha(1)
     end
@@ -1349,6 +1355,7 @@ function ApplyLock()
     lock.rest = db.lock and 0.9 or 0.35
     lock.icon:SetDesaturated(not db.lock)
     if not lock:IsMouseOver() then lock.icon:SetAlpha(lock.rest) end
+    ApplyFade()
 end
 
 function SetLock(locked)

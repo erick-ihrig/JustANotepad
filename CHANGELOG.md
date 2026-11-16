@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- The lock now also lets clicks go through the notepad to the game, so you can't click into it by accident. Lock and unlock it with the new lock control next to the close control, the Lock Window setting or `/note lock`. While locked, only the lock control takes clicks.
+- The lock now also lets clicks go through the notepad to the game, so you can't click into it by accident. Lock and unlock it with the new lock control next to the close control, the Lock Window setting or `/note lock`. While locked, only the lock control takes clicks, and hovering shows only the lock control.
 - Fixed: a note with only one line couldn't be highlighted, and clicking into a to-do always put an invisible cursor at the start of its text.
 - Fixed: turning on Monospace Font could leave the notes in the normal font.
 
