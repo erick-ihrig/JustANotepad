@@ -5,3 +5,4 @@ manual-changelog:
 ignore:
   - README.md
   - LICENSE
+  - docs

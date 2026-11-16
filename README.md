@@ -35,6 +35,8 @@ Download on CurseForge: https://www.curseforge.com/projects/1804445
 
 Report issues or suggest features: https://github.com/erick-ihrig/JustANotepad/issues
 
+Design notes and dev log: [docs](docs/README.md)
+
 ## Credits
 
 Made by Erick Ihrig. Built with AI assistance (Claude, by Anthropic). MIT licensed.
