@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New: shift-click an item, spell or quest while typing to put its link in your note, like in chat. Click a link to see it; it deletes as one piece. Search finds the link's name, not its hidden data.
+- New Hide in Combat option (Settings > Window): the notepad hides when combat starts and comes back, faded, when it ends.
 - The lock now also lets clicks go through the notepad to the game, so you can't click into it by accident. Lock and unlock it with the new lock control at the top-left, left of the tabs, the Lock Window setting or `/note lock`. While locked, only the lock control and the to-do checkboxes take clicks (the checkboxes stop too if the text is set to fade out completely), and hovering shows only the lock control.
 - Fixed: a note with only one line couldn't be highlighted, and clicking into a to-do always put an invisible cursor at the start of its text.
 - Fixed: turning on Monospace Font could leave the notes in the normal font.

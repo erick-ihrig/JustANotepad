@@ -35,6 +35,7 @@ local DEFAULTS = {
     lock = false,           -- can't be moved or resized, and clicks pass through it (except on the lock control)
     moveKeysExit = true,    -- holding a movement key while typing leaves the notepad and takes the letters back
     reopenAtLogin = true,
+    hideInCombat = false,   -- hidden while in combat, back (faded) when it ends
     minimapButton = false,
     minimapAngle = 225,
     gameMenuButton = true,
@@ -283,6 +284,7 @@ local fade = 1          -- 0 = only the text is left, 1 = everything visible
 local lastActive = 0
 local holdUntil = 0     -- keeps the window visible while a menu or popup about it is open
 local moving = false
+local hiddenForCombat = false -- hidden by Hide in Combat; shown again when combat ends
 
 -- The mouse is on the window, or on the search icon or box that hang under its bottom-left corner.
 local function IsHovered()
@@ -498,7 +500,7 @@ local function CreateWindow()
         LayoutTabs()
     end)
     frame:SetScript("OnHide", function()
-        db.open = false
+        if not hiddenForCombat then db.open = false end -- still open as far as logging out and back in goes
         StopMove()
         if focused then focused.edit:ClearFocus() end
         SetSearchShown(false)
@@ -507,7 +509,22 @@ local function CreateWindow()
 end
 
 local function Toggle()
+    hiddenForCombat = false -- opening or closing it by hand in combat wins over Hide in Combat
     frame:SetShown(not frame:IsShown())
+end
+
+local function HideForCombat()
+    if not (db.hideInCombat and frame:IsShown()) then return end
+    hiddenForCombat = true
+    frame:Hide()
+end
+
+local function ShowAfterCombat()
+    if not hiddenForCombat then return end
+    hiddenForCombat = false
+    frame:Show()
+    fade, lastActive = 0, 0 -- comes back faded, the way it usually sits, rather than flashing up
+    ApplyFade()
 end
 
 ------------------------------------------------------------------------
@@ -660,12 +677,15 @@ end
 -- The width of each line a to-do's text wraps into, worked out word by word the way the game wraps it.
 local function LineWidths(text, maxWidth)
     local widths, line = {}, ""
+    local function Measure(value) measure:SetText((value:gsub("\001", " "))) end
     local function Close()
-        measure:SetText((line:gsub("%s+$", "")))
+        Measure((line:gsub("%s+$", "")))
         widths[#widths + 1] = math.min(measure:GetStringWidth() or 0, maxWidth)
     end
+    -- A link wraps as one piece, so the spaces inside it are hidden from the word split (and put back to measure).
+    text = text:gsub("|H.-|h.-|h", function(link) return (link:gsub(" ", "\001")) end)
     for word, space in text:gmatch("(%S+)(%s*)") do
-        measure:SetText(line .. word)
+        Measure(line .. word)
         if line ~= "" and (measure:GetStringWidth() or 0) > maxWidth then
             Close()
             line = word .. space
@@ -973,6 +993,13 @@ local function SetUpEdit(edit, widget)
     edit:SetFontObject(ChatFontNormal)
     edit:SetShadowColor(0, 0, 0, 1) -- keeps the text readable when it floats alone
     edit:SetShadowOffset(1, -1)
+    -- Item, spell and quest links in the text: clicking one shows it like it does in chat.
+    if edit.SetHyperlinksEnabled then
+        edit:SetHyperlinksEnabled(true)
+        edit:SetScript("OnHyperlinkClick", function(_, link, text, button)
+            if SetItemRef then SetItemRef(link, text, button, edit) end
+        end)
+    end
     edit:SetScript("OnTextChanged", function(self, userInput)
         local block = widget.block
         if not block or probing then return end
@@ -1395,6 +1422,13 @@ end
 
 local searchAt -- where the latest match ended: { page, block, position }
 
+-- The text as it reads: the codes inside links and colours are blanked out (same length, so positions still
+-- match), so a search finds the words you see and not the link's hidden data.
+local function VisibleText(text)
+    local function Blank(code) return ("\001"):rep(#code) end
+    return (text:gsub("|c%x%x%x%x%x%x%x%x", Blank):gsub("|r", Blank):gsub("|H.-|h", Blank):gsub("|h", Blank))
+end
+
 function FindNext()
     local query = searchBox:GetText():lower()
     if query == "" then return end
@@ -1412,7 +1446,7 @@ function FindNext()
         for blockIndex = (step == 0 and startBlock or 1), #page.blocks do
             local block = page.blocks[blockIndex]
             local from = (step == 0 and blockIndex == startBlock) and startPosition or 1
-            local first, last = block.text:lower():find(query, from, true)
+            local first, last = VisibleText(block.text):lower():find(query, from, true)
             if first then
                 if index ~= CurrentIndex() then ShowPage(index) end
                 searchAt = { page = page, block = block, position = last }
@@ -1920,6 +1954,8 @@ local function RegisterOptions()
     Checkbox("moveKeysExit", "Movement Keys Leave the Notepad",
         "Holding a movement key (such as W, A, S or D) while typing stops typing and takes back the letters it typed. "
         .. "Release the key and press it again to move. Tapping the keys still types as normal.")
+    Checkbox("hideInCombat", "Hide in Combat", "Hides the notepad when combat starts and brings it back when combat "
+        .. "ends.")
     Checkbox("reopenAtLogin", "Reopen at Login", "If the notepad was open when you logged out, it opens again at login.")
     Checkbox("minimapButton", "Minimap Button", "Left-click opens the notepad, right-click opens these settings.",
         UpdateMinimapButton)
@@ -1977,9 +2013,27 @@ SlashCmdList.JUSTANOTEPAD = function(message)
     end
 end
 
+-- Shift-clicking an item, spell, quest and so on while typing in the notepad puts its link at the cursor, the way
+-- it goes into the chat box. The game offers the link to ChatFrameUtil.InsertLink (or ChatEdit_InsertLink on older
+-- clients); the hook only adds to that, so chat and other addons are unaffected.
+local function InsertLink(link)
+    if type(link) ~= "string" or not (focused and frame:IsShown()) then return end
+    if not focused.edit:HasFocus() then return end
+    focused.edit:Insert(link)
+end
+
+local function HookLinks()
+    if ChatFrameUtil and ChatFrameUtil.InsertLink then
+        hooksecurefunc(ChatFrameUtil, "InsertLink", InsertLink)
+    elseif ChatEdit_InsertLink then
+        hooksecurefunc("ChatEdit_InsertLink", InsertLink)
+    end
+end
+
 -- A click anywhere outside the notepad stops typing, so your keys go back to the game.
 local function ClearFocusIfClickedOutside()
-    if frame:IsShown() and not IsHovered() then
+    -- Shift-click is how links are added (like chat), so it leaves the typing where it is.
+    if frame:IsShown() and not IsHovered() and not IsShiftKeyDown() then
         if focused then focused.edit:ClearFocus() end
         searchBox:ClearFocus()
         renameBox:ClearFocus()
@@ -1990,6 +2044,8 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("GLOBAL_MOUSE_DOWN")
 events:RegisterEvent("GLOBAL_MOUSE_UP")
+events:RegisterEvent("PLAYER_REGEN_DISABLED")
+events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event, button)
     if event == "PLAYER_LOGIN" then
         LoadData()
@@ -2008,12 +2064,18 @@ events:SetScript("OnEvent", function(_, event, button)
         ApplyLock()
         if db.reopenAtLogin and wasOpen then frame:Show() end
         db.open = frame:IsShown()
+        if InCombatLockdown and InCombatLockdown() then HideForCombat() end
+        HookLinks()
     elseif event == "GLOBAL_MOUSE_UP" and frame then
         if button == "RightButton" and frame:IsShown() and not db.lock then
             for _, widget in ipairs(active) do
                 if not widget.isTodo and widget:IsMouseOver() then ShowConvertMenu(widget) end
             end
         end
+    elseif event == "PLAYER_REGEN_DISABLED" and frame then
+        HideForCombat()
+    elseif event == "PLAYER_REGEN_ENABLED" and frame then
+        ShowAfterCombat()
     elseif event == "GLOBAL_MOUSE_DOWN" and frame then
         C_Timer.After(0, ClearFocusIfClickedOutside) -- next frame, once the click has landed
     end
