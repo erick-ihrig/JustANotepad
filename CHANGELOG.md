@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: turning on Monospace Font could leave the notes in the normal font.
+
 ## 1.1.0
 
 - Fixed: the blinking cursor didn't show in to-do lines.

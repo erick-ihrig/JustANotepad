@@ -531,37 +531,72 @@ end
 
 -- The height of one line of note text, measured from the font. A text box shorter than this shows no text and
 -- no cursor at all (though it still takes clicks and typing), so boxes are never made shorter.
--- The note font: the chat font, or the bundled monospace one. Whether the monospace file really loaded is checked
--- by its widths (narrow and wide letters take the same room), because the game reports the requested font even
--- when it couldn't load the file. If it didn't load, the chat font is used and a message says so once.
+-- The note font: the chat font, or the bundled monospace one. The game may load a font file a moment after it's
+-- first asked for, so the monospace font is used straight away and checked a little later, by its widths (narrow
+-- and wide letters take the same room). If it still isn't monospace then, the chat font is used again and a
+-- message says so once.
 local monoFailed = false
+local monoCheck = 0 -- bumped for each new check, so only the latest one acts
+local monoChecked = false -- checked once per session, and again whenever the option is turned on
 
 local function IsMonospace()
     measure:SetText("iiiiiiiiii")
     local narrow = measure:GetStringWidth() or 0
     measure:SetText("MMMMMMMMMM")
     local wide = measure:GetStringWidth() or 0
-    return narrow > 0 and math.abs(wide - narrow) <= wide * 0.05
+    return narrow > 0 and math.abs(wide - narrow) <= wide * 0.05, narrow, wide
+end
+
+local function VerifyMonoFont()
+    monoCheck = monoCheck + 1
+    local check = monoCheck
+    local function Check(lastTry)
+        if check ~= monoCheck or not db.monoFont or monoFailed or fontFile ~= MONO_FONT then return end
+        measure:SetFont(MONO_FONT, db.fontSize, fontFlags)
+        if IsMonospace() then return end
+        if not lastTry then return end
+        monoFailed = true
+        Print("The monospace font didn't load, so the normal font is used. If the addon was installed or updated "
+            .. "while the game was running, restart the game (a /reload isn't enough). /note fontcheck shows details.")
+        RenderPage()
+    end
+    C_Timer.After(1, function() Check(false) end)
+    C_Timer.After(3, function() Check(true) end)
 end
 
 local function PickFont()
     local _
     fontFile, _, fontFlags = ChatFontNormal:GetFont()
     if not db.monoFont or monoFailed then return end
-    measure:SetFont(MONO_FONT, db.fontSize, fontFlags)
-    if IsMonospace() then
-        fontFile = MONO_FONT
-    else
-        monoFailed = true
-        measure:SetFont(fontFile, db.fontSize, fontFlags)
-        Print("The monospace font didn't load, so the normal font is used. If the addon was installed or updated "
-            .. "while the game was running, restart the game (a /reload isn't enough), then turn the option on again.")
+    fontFile = MONO_FONT
+    if not monoChecked then
+        monoChecked = true
+        VerifyMonoFont()
     end
 end
 
 -- Turning the option on (or off and on) tries the font file again.
 local function RetryMonoFont()
     monoFailed = false
+    monoChecked = false
+end
+
+-- /note fontcheck: what the game reports about the monospace font, for tracking down a font that won't load.
+local function FontReport()
+    local ok = measure:SetFont(MONO_FONT, db.fontSize, fontFlags)
+    local loaded = measure:GetFont()
+    local mono, narrow, wide = IsMonospace()
+    Print("Monospace font: setting " .. (db.monoFont and "on" or "off") .. ", gave up this session: "
+        .. (monoFailed and "yes" or "no") .. ".")
+    Print("Loading it: SetFont returned " .. tostring(ok) .. ", font now " .. tostring(loaded) .. ".")
+    Print("Widths of 10 i's and 10 M's: " .. math.floor(narrow + 0.5) .. " and " .. math.floor(wide + 0.5)
+        .. (mono and " (monospace, so it loaded)." or " (not monospace, so it didn't load)."))
+    local shown
+    for _, widget in ipairs(active) do
+        shown = shown or widget.edit:GetFont()
+    end
+    Print("Note text is using: " .. tostring(shown or "nothing on this page") .. ".")
+    measure:SetFont(fontFile or loaded, db.fontSize, fontFlags)
 end
 
 -- The cursor's height for each font and size, as the game reports it while typing. The cursor is a little taller
@@ -1805,6 +1840,8 @@ SlashCmdList.JUSTANOTEPAD = function(message)
     elseif command == "bg" and tonumber(value) then
         db.backgroundAlpha = math.max(0, math.min(100, tonumber(value))) / 100
         ApplyLook()
+    elseif command == "fontcheck" then
+        FontReport()
     elseif command == "mono" then
         db.monoFont = not db.monoFont
         RetryMonoFont()
