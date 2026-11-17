@@ -1953,7 +1953,13 @@ local function RegisterOptions()
     local function Register(key, name, onChange)
         local setting = Settings.RegisterAddOnSetting(category, "JustANotepad_" .. key, key, db,
             type(DEFAULTS[key]), name, DEFAULTS[key])
-        if onChange then setting:SetValueChangedCallback(onChange) end
+        if onChange then
+            -- Store the new value before acting on it, in case the callback comes before the setting is saved.
+            setting:SetValueChangedCallback(function(_, value)
+                if type(value) == type(DEFAULTS[key]) then db[key] = value end
+                onChange()
+            end)
+        end
         return setting
     end
     -- Each control is built on its own, so one the client lacks doesn't take the others with it.
@@ -1988,7 +1994,10 @@ local function RegisterOptions()
     Checkbox("showLock", "Lock", "Shows the lock control. /note lock and the Lock Window setting work either way.",
         UpdateControls)
     Checkbox("showSearch", "Search", "Shows the search control under the bottom-left corner. Ctrl+F works either way.",
-        UpdateControls)
+        function()
+            if not db.showSearch then SetSearchShown(false) end -- close an open search box along with its control
+            UpdateControls()
+        end)
 
     Header("Look")
     Checkbox("fadeText", "Fade the Text Too",
