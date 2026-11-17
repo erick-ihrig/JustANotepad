@@ -1652,9 +1652,12 @@ local function StartRename(page)
     local tab = tabs[IndexOf(page) or 0]
     if not tab then return end
     renameBox.page = page
+    renameBox.tab = tab
     renameBox:ClearAllPoints()
-    renameBox:SetAllPoints(tab)
-    renameBox:SetText(page.title)
+    renameBox:SetPoint("TOPLEFT", tab, "TOPLEFT")
+    renameBox:SetHeight(tab:GetHeight())
+    renameBox:SetWidth(tab:GetWidth())
+    renameBox:SetText(page.title) -- OnTextChanged sizes it to the name
     renameBox:Show()
     renameBox:SetFocus()
     renameBox:HighlightText()
@@ -1815,6 +1818,21 @@ local function CreateTabs()
     local back = renameBox:CreateTexture(nil, "BACKGROUND")
     back:SetAllPoints()
     back:SetColorTexture(0.1, 0.1, 0.1, 1)
+    -- The box grows with the name as you type (a new page's tab is only as
+    -- wide as "1"), up to the notepad's right edge.
+    local measure = renameBox:CreateFontString(nil, "OVERLAY")
+    measure:SetFontObject(GameFontHighlightSmall)
+    measure:SetAlpha(0)
+    renameBox:SetScript("OnTextChanged", function(self)
+        local tab = self.tab
+        if not tab then return end
+        measure:SetText(self:GetText() or "")
+        local want = math.ceil(measure:GetStringWidth() or 0) + 8 + 10 -- text insets, room for the cursor
+        local width = math.max(tab:GetWidth(), want)
+        local left, right = tab:GetLeft(), frame:GetRight()
+        if left and right then width = math.min(width, math.max(tab:GetWidth(), right - left)) end
+        self:SetWidth(width)
+    end)
     renameBox:SetScript("OnEnterPressed", function(self)
         local title = strtrim(self:GetText() or "")
         if title ~= "" and self.page then self.page.title = title end

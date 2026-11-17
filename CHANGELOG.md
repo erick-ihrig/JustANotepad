@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Fixed: the box for renaming a tab now grows to fit the name as you type, instead of staying as narrow as the tab (a new page's tab is only one number wide).
+
 ## 1.2.0
 
 - New: locking the notepad now also lets clicks go through it to the game, so you can't click into it by accident. Lock and unlock it with the new lock control at the top-left (left of the tabs), the Lock Window setting or `/note lock`. While locked, only the lock control and the to-do checkboxes take clicks (the checkboxes stop too if the text is set to fade out completely), and hovering shows only the lock control.
