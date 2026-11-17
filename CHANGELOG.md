@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+- New Lock in Combat option (Settings > Window): the notepad locks when combat starts, so clicks go through it, and unlocks when combat ends. If it was already locked, or you lock or unlock it yourself during the fight, your choice is kept.
 - Fixed: the box for renaming a tab now grows to fit the name as you type, instead of staying as narrow as the tab (a new page's tab is only one number wide).
 
 ## 1.2.0

@@ -35,6 +35,7 @@ local DEFAULTS = {
     moveKeysExit = true,    -- holding a movement key while typing leaves the notepad and takes the letters back
     reopenAtLogin = true,
     hideInCombat = false,   -- hidden while in combat, back (faded) when it ends
+    lockInCombat = false,   -- locked while in combat, unlocked again when it ends (if it wasn't locked before)
     minimapButton = false,
     minimapAngle = 225,
     gameMenuButton = true,
@@ -1437,9 +1438,23 @@ function ApplyLock(recheck)
     ApplyFade()
 end
 
-function SetLock(locked)
+-- byCombat: Lock in Combat is doing it. Locking or unlocking by hand clears that, so your choice is kept when
+-- combat ends. db.lockedForCombat is saved, so a lock left over from logging out mid-fight is undone at login.
+function SetLock(locked, byCombat)
     db.lock = locked and true or false
+    if not byCombat then db.lockedForCombat = nil end
     ApplyLock()
+end
+
+local function LockForCombat()
+    if db.lockInCombat and not db.lock then
+        SetLock(true, true)
+        db.lockedForCombat = true
+    end
+end
+
+local function UnlockAfterCombat()
+    if db.lockedForCombat then SetLock(false) end
 end
 
 ------------------------------------------------------------------------
@@ -1992,12 +2007,14 @@ local function RegisterOptions()
     Header("Window")
     Checkbox("lock", "Lock Window", "Stops the notepad from being moved or resized, and lets clicks go through it "
         .. "to the game, so you can't click into it by accident. The lock control still works, to unlock it. "
-        .. "Same as the lock control and /note lock.", function() ApplyLock() end)
+        .. "Same as the lock control and /note lock.", function() db.lockedForCombat = nil ApplyLock() end)
     Checkbox("moveKeysExit", "Movement Keys Leave the Notepad",
         "Holding a movement key (such as W, A, S or D) while typing stops typing and takes back the letters it typed. "
         .. "Release the key and press it again to move. Tapping the keys still types as normal.")
     Checkbox("hideInCombat", "Hide in Combat", "Hides the notepad when combat starts and brings it back when combat "
         .. "ends.")
+    Checkbox("lockInCombat", "Lock in Combat", "Locks the notepad when combat starts, so clicks go through it to the "
+        .. "game, and unlocks it when combat ends. If it was already locked, it stays locked.")
     Checkbox("reopenAtLogin", "Reopen at Login", "If the notepad was open when you logged out, it opens again at login.")
     Checkbox("minimapButton", "Minimap Button", "Left-click opens the notepad, right-click opens these settings.",
         UpdateMinimapButton)
@@ -2103,10 +2120,15 @@ events:SetScript("OnEvent", function(_, event, button)
         RegisterOptions()
         HookGameMenu()
         UpdateMinimapButton()
+        local inCombat = InCombatLockdown and InCombatLockdown()
+        if db.lockedForCombat and not inCombat then SetLock(false) end -- logged out mid-fight
         ApplyLock()
         if db.reopenAtLogin and wasOpen then frame:Show() end
         db.open = frame:IsShown()
-        if InCombatLockdown and InCombatLockdown() then HideForCombat() end
+        if inCombat then
+            LockForCombat()
+            HideForCombat()
+        end
         HookLinks()
     elseif event == "GLOBAL_MOUSE_UP" and frame then
         if button == "RightButton" and frame:IsShown() and not db.lock then
@@ -2115,8 +2137,10 @@ events:SetScript("OnEvent", function(_, event, button)
             end
         end
     elseif event == "PLAYER_REGEN_DISABLED" and frame then
+        LockForCombat()
         HideForCombat()
     elseif event == "PLAYER_REGEN_ENABLED" and frame then
+        UnlockAfterCombat()
         ShowAfterCombat()
     elseif event == "GLOBAL_MOUSE_DOWN" and frame then
         C_Timer.After(0, ClearFocusIfClickedOutside) -- next frame, once the click has landed

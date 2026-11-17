@@ -10,7 +10,7 @@ A minimal notepad for World of Warcraft: Forever. It's a text box that floats ov
 - **Item, spell and quest links.** While typing, shift-click an item, spell or quest to put its link in your note, just like in chat. Click the link later to see it.
 - **Saves as you type,** with undo (Ctrl+Z) and search across all pages (Ctrl+F).
 - **Catches movement keys.** Hold a movement key while typing and the notepad stops typing and takes the stray letters back, so nothing you wrote is lost. Press the key again to move.
-- **Out of the way when you want it.** Drag it by a tab, its edge or any empty space; resize it from the corner. Lock it with the lock button and clicks go straight through it to the game, so you never click into it by accident. It can also hide itself in combat. Choose which buttons show, the text size and the background opacity. Notes use a monospace font by default, so lists and columns line up; you can switch to the game's normal font.
+- **Out of the way when you want it.** Drag it by a tab, its edge or any empty space; resize it from the corner. Lock it with the lock button and clicks go straight through it to the game, so you never click into it by accident. It can also hide or lock itself in combat. Choose which buttons show, the text size and the background opacity. Notes use a monospace font by default, so lists and columns line up; you can switch to the game's normal font.
 
 ## Getting started
 
