@@ -94,7 +94,7 @@ local function WelcomePage()
         { todo = true, text = "Highlight some lines of text, right-click them and choose Convert into to-do" },
         { text = "Undo: the arrow button above, or Ctrl+Z.\n\n"
             .. "Pages: left-click + to add a page for all your characters, or right-click + for a page only this "
-            .. "character sees. Right-click a tab to rename, move, convert or delete it.\n\n"
+            .. "character sees. Right-click a tab to rename, move, convert, clear or delete it.\n\n"
             .. "Links: while typing, shift-click an item, spell or quest to put its link in your note, like in "
             .. "chat. Click a link to see it.\n\n"
             .. "Search: the magnifier under the bottom-left corner, or Ctrl+F.\n\n"
