@@ -1662,6 +1662,36 @@ local function AskToDelete(page)
     StaticPopup_Show("JUSTANOTEPAD_DELETE", page.title)
 end
 
+-- Clear Page empties a page but keeps its tab and name. It can be undone like any other change to a page.
+local function ClearPage(page)
+    local index = IndexOf(page)
+    if not index then return end
+    RememberPage(page)
+    page.blocks = { { text = "" } }
+    ShowPage(index)
+end
+
+local pendingClear
+StaticPopupDialogs["JUSTANOTEPAD_CLEAR"] = {
+    text = "Clear everything on the page \"%s\"? Undo (Ctrl+Z) brings it back.",
+    button1 = YES or "Yes",
+    button2 = NO or "No",
+    OnAccept = function()
+        if pendingClear then ClearPage(pendingClear) end
+        pendingClear = nil
+    end,
+    OnCancel = function() pendingClear = nil end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+
+local function AskToClear(page)
+    pendingClear = page
+    holdUntil = GetTime() + 5
+    StaticPopup_Show("JUSTANOTEPAD_CLEAR", page.title)
+end
+
 -- Renaming happens in place, on the tab itself.
 local function StartRename(page)
     local tab = tabs[IndexOf(page) or 0]
@@ -1706,6 +1736,8 @@ local function ShowTabMenu(tab)
         forward:SetEnabled((CanMove(page, 1)))
         root:CreateButton(entry.scope == "character" and "Make It for All Characters"
             or ("Make It for " .. CharacterName() .. " Only"), function() ConvertPage(page) end)
+        local clear = root:CreateButton("Clear Page", function() AskToClear(page) end)
+        clear:SetEnabled(not IsEmpty(page))
         local delete = root:CreateButton("Delete", function() AskToDelete(page) end)
         delete:SetEnabled(#all > 1)
     end)
