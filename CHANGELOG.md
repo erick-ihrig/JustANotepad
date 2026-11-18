@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: drag a to-do by the dots at its right end to move it anywhere in the page. A line shows where it will land, and Ctrl+Z moves it back.
 - New: Clear Page in a tab's right-click menu empties the page but keeps the tab. It asks first, and Ctrl+Z brings everything back.
 - Fixed: turning off the Search setting left an open search box on screen until a reload.
 - New Lock in Combat option (Settings > Window): the notepad locks when combat starts, so clicks go through it, and unlocks when combat ends. If it was already locked, or you lock or unlock it yourself during the fight, your choice is kept.

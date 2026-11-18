@@ -56,6 +56,7 @@ local CONTROL_SIZE = 14
 local TAB_HEIGHT = 18
 local HEADER = TAB_HEIGHT + 1   -- the row of tabs and controls above the text box
 local BLOCK_GAP = 2         -- between a to-do line and its neighbours
+local GRIP_WIDTH = 8        -- the drag grip at the right end of a to-do
 local TODO_INDENT = 34      -- checkbox, then the delete circle, then the to-do's text
 local TODO_PAD = 2          -- space above and below a to-do's text, inside its row
 local CHECK_SIZE = 13
@@ -90,6 +91,7 @@ local function WelcomePage()
             .. "A few things to try:" },
         { todo = true, text = "Tick this box to mark a to-do as done" },
         { todo = true, text = "Hover a to-do and click the red circle to delete it" },
+        { todo = true, text = "Drag the dots at the right end of a to-do to move it" },
         { todo = true, text = "Add your own with the checkmark button above, or Ctrl+T" },
         { todo = true, text = "Highlight some lines of text, right-click them and choose Convert into to-do" },
         { text = "Undo: the arrow button above, or Ctrl+Z.\n\n"
@@ -323,11 +325,12 @@ local function ApplyFade()
     end
 end
 
-local CheckCursor, CheckHeldKey -- defined with the page content
+local CheckCursor, CheckHeldKey, UpdateDrag, FinishDrag -- defined with the page content
 
 local function OnUpdate(_, elapsed)
     CheckCursor()
     CheckHeldKey()
+    UpdateDrag()
     local now = GetTime()
     if IsActive() then lastActive = now end
     local target = (now - lastActive < FADE_DELAY) and 1 or 0
@@ -1090,6 +1093,80 @@ local function CreateTextBlock()
     return edit
 end
 
+-- Dragging a to-do by its grip (the dots at the right end of the row) to another place in the page.
+-- While dragging, the row dims and a line shows where it will land: between any two blocks, never inside a
+-- paragraph. Letting go moves it there (undoable); text left touching around its old place joins up again.
+local drag -- { row, block } while a to-do is being dragged
+local dropLine, dropSlot
+
+local function CursorInPage()
+    local _, y = GetCursorPosition()
+    local scale = content:GetEffectiveScale() or 1
+    return (content:GetTop() or 0) - y / scale
+end
+
+function UpdateDrag()
+    if not drag then return end
+    if not drag.row.block or not frame:IsShown() or db.lock then return FinishDrag(true) end
+    local y = CursorInPage()
+    -- Near or past the top or bottom of the box, the page scrolls.
+    local scroll = scrollFrame:GetVerticalScroll() or 0
+    local height = scrollFrame:GetHeight() or 0
+    local range = math.max(0, (content:GetHeight() or 0) - height)
+    if y < scroll + 12 then
+        scrollFrame:SetVerticalScroll(math.max(0, scroll - 4))
+    elseif y > scroll + height - 12 then
+        scrollFrame:SetVerticalScroll(math.min(range, scroll + 4))
+    end
+    -- The slot: just before the first block whose middle is below the cursor (or after the last one).
+    local offset, slot, lineY = 0, #active + 1, nil
+    for index, widget in ipairs(active) do
+        local top = offset + (index > 1 and BLOCK_GAP or 0)
+        local blockHeight = widget:GetHeight() or 0
+        if not lineY and y < top + blockHeight / 2 then
+            slot, lineY = index, top - (index > 1 and BLOCK_GAP / 2 or 0)
+        end
+        offset = top + blockHeight
+    end
+    lineY = lineY or offset + 1
+    dropSlot = slot
+    dropLine:ClearAllPoints()
+    dropLine:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -math.floor(lineY))
+    dropLine:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -math.floor(lineY))
+    dropLine:Show()
+end
+
+local function StartDrag(row)
+    if db.lock or not row.block then return end
+    if focused then focused.edit:ClearFocus() end
+    drag = { row = row, block = row.block }
+    row:SetAlpha(0.4)
+    if not dropLine then
+        dropLine = content:CreateTexture(nil, "OVERLAY")
+        dropLine:SetColorTexture(1, 0.82, 0, 0.9)
+        dropLine:SetHeight(2)
+    end
+    UpdateDrag()
+end
+
+function FinishDrag(cancel)
+    if not drag then return end
+    local row, block, slot = drag.row, drag.block, dropSlot
+    drag, dropSlot = nil, nil
+    row:SetAlpha(1)
+    if dropLine then dropLine:Hide() end
+    if cancel or not slot then return end
+    local page = CurrentPage()
+    local from = BlockIndex(page, block)
+    if not from or slot == from or slot == from + 1 then return end -- dropped where it already was
+    RememberPage(page)
+    table.remove(page.blocks, from)
+    if slot > from then slot = slot - 1 end
+    table.insert(page.blocks, slot, block)
+    Normalize(page)
+    RenderPage()
+end
+
 local function CreateTodoRow()
     local row = CreateFrame("Frame", nil, content)
     row.isTodo = true
@@ -1128,8 +1205,35 @@ local function CreateTodoRow()
     delete:SetScript("OnClick", function()
         if row.block then DeleteTodo(row.block) end
     end)
+    -- The grip: two columns of dots at the right end of the row, over the text and faint. Drag it to move the
+    -- to-do. It shows while the mouse is on the row (never while locked) and brightens when the mouse is on it.
+    local grip = CreateFrame("Button", nil, row)
+    grip:SetSize(GRIP_WIDTH, CHECK_SIZE)
+    row.grip = grip -- placed beside the first line of text when the page is drawn
+    for column = 0, 1 do
+        for line = 0, 2 do
+            local dot = grip:CreateTexture(nil, "ARTWORK")
+            dot:SetColorTexture(0.85, 0.85, 0.85, 1)
+            dot:SetSize(2, 2)
+            dot:SetPoint("TOPLEFT", 1 + column * 4, -(2 + line * 4))
+        end
+    end
+    grip:SetAlpha(0)
+    grip:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then StartDrag(row) end
+    end)
+    grip:SetScript("OnMouseUp", function() FinishDrag() end)
+
     row:SetScript("OnUpdate", function(self)
-        delete:SetAlpha((self:IsMouseOver() and not db.lock) and 1 or 0)
+        local hovered = self:IsMouseOver() and not db.lock
+        delete:SetAlpha(hovered and 1 or 0)
+        local alpha = 0
+        if drag and drag.row == self then
+            alpha = 0.9
+        elseif hovered then
+            alpha = grip:IsMouseOver() and 0.9 or 0.45
+        end
+        grip:SetAlpha(alpha)
     end)
 
     -- The text wraps inside its own indented column, so every line starts where the first one does.
@@ -1147,6 +1251,7 @@ local function CreateTodoRow()
         UpdateTodoLook(row) -- the strike lines follow the wrapping
         Relayout()
     end)
+    grip:SetFrameLevel(edit:GetFrameLevel() + 2) -- over the text
     return row
 end
 
@@ -1179,6 +1284,8 @@ function RenderPage()
             widget.edit:SetWidth(widget.textWidth)
             widget.check:ClearAllPoints()
             widget.check:SetPoint("TOPLEFT", 1, -(TODO_PAD + math.max(0, math.floor((TextLineHeight() - CHECK_SIZE) / 2))))
+            widget.grip:ClearAllPoints()
+            widget.grip:SetPoint("TOPRIGHT", -1, -(TODO_PAD + math.max(0, math.floor((TextLineHeight() - CHECK_SIZE) / 2))))
         else
             widget = table.remove(textPool) or CreateTextBlock()
         end
@@ -1233,6 +1340,8 @@ function ResizeBlocks()
             widget.edit:SetWidth(widget.textWidth)
             widget.check:ClearAllPoints()
             widget.check:SetPoint("TOPLEFT", 1, -(TODO_PAD + math.max(0, math.floor((TextLineHeight() - CHECK_SIZE) / 2))))
+            widget.grip:ClearAllPoints()
+            widget.grip:SetPoint("TOPRIGHT", -1, -(TODO_PAD + math.max(0, math.floor((TextLineHeight() - CHECK_SIZE) / 2))))
             UpdateTodoLook(widget)
         end
     end
@@ -2172,6 +2281,7 @@ events:SetScript("OnEvent", function(_, event, button)
         end
         HookLinks()
     elseif event == "GLOBAL_MOUSE_UP" and frame then
+        if button == "LeftButton" then FinishDrag() end -- in case the release lands away from the grip
         if button == "RightButton" and frame:IsShown() and not db.lock then
             for _, widget in ipairs(active) do
                 if not widget.isTodo and widget:IsMouseOver() then ShowConvertMenu(widget) end

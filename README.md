@@ -6,7 +6,7 @@ A minimal notepad for World of Warcraft: Forever. It's a text box that floats ov
 
 - **Fades out of the way.** When the notepad isn't hovered or focused, the box, tabs and buttons fade out and only your text is left. Turn on the eye button and the text fades too.
 - **Pages for everyone or for one character.** Left-click **+** for a page all your characters see, right-click **+** for a page only this character sees. Right-click a tab to rename, move, convert, clear or delete it.
-- **To-do lines anywhere in a note.** Add one with the checkmark button or Ctrl+T. Highlight text and right-click it to convert it into to-dos.
+- **To-do lines anywhere in a note.** Add one with the checkmark button or Ctrl+T. Highlight text and right-click it to convert it into to-dos. Drag the dots at the right end of a to-do to move it.
 - **Item, spell and quest links.** While typing, shift-click an item, spell or quest to put its link in your note, just like in chat. Click the link later to see it.
 - **Saves as you type,** with undo (Ctrl+Z) and search across all pages (Ctrl+F).
 - **Catches movement keys.** Hold a movement key while typing and the notepad stops typing and takes the stray letters back, so nothing you wrote is lost. Press the key again to move.
